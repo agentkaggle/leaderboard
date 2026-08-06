@@ -34,7 +34,7 @@ data/leaderboard.json（生成文件，不提交）
 Hugo：只负责渲染
             │
             ▼
-public/（生成文件，不提交）→ GitHub Pages
+public/（不提交到 main）→ gh-pages 分支 → GitHub Pages
 ```
 
 ## 本地运行
@@ -100,7 +100,7 @@ hugo --gc --minify
 
 Repository Secret 只能由有权限的仓库维护者写入，普通用户不能通过 PR 或 Issue 安全地自行添加。参与者应通过仓库团队认可的私密渠道把 token 交给维护者，由维护者整体更新 `KAGGLE_API_TOKENS`；绝不能把 token 粘贴到 Issue、PR、Discussion、日志或页面表单中。添加 token 前，应取得账户所有者同意：比赛结束后，该账户可见且 team name 命中 `KAGGLE_TEAMS` 的比赛名称、团队名、提交时间和 Public / Private score 会发布到公开页面。
 
-然后在 Settings → Pages 中把 Source 设为 **GitHub Actions**。
+然后在 Settings → Pages 中把 Source 设为 **Deploy from a branch**，分支选择 `gh-pages`，目录选择 `/ (root)`。
 
 [Pages workflow](.github/workflows/pages.yml) 会在以下情况执行：
 
@@ -108,7 +108,7 @@ Repository Secret 只能由有权限的仓库维护者写入，普通用户不�
 - 每天 `02:17 UTC`（新加坡时间 `10:17`）
 - 手动 `workflow_dispatch`
 
-Secret 只注入数据生成和公开产物泄漏检查步骤；Hugo、Pages 上传和部署步骤拿不到 Kaggle token。工作流使用只读仓库权限、Pages OIDC、固定版本和固定 action commit SHA。Pull request 只运行 [无密钥 CI](.github/workflows/ci.yml)，用合成数据验证 Python、Hugo 和公开产物扫描，不使用 `pull_request_target`，也不读取 secrets。
+Secret 只注入数据生成和公开产物泄漏检查步骤；Hugo、Pages artifact 上传和 `gh-pages` 发布步骤拿不到 Kaggle token。`build` job 只有只读权限，独立的 `publish` job 只持有更新发布分支所需的 `contents: write`，所有 action 都固定到完整 commit SHA。Pull request 只运行 [无密钥 CI](.github/workflows/ci.yml)，用合成数据验证 Python、Hugo 和公开产物扫描，不使用 `pull_request_target`，也不读取 secrets。
 
 > `KAGGLE_TEAMS` 可以作为 Secret 隐藏仓库中的输入配置，但 team name 会出现在最终静态 HTML 中。公开 GitHub Pages 与“team name 本身保密”无法同时成立。
 
@@ -163,8 +163,8 @@ Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提�
 - 活动比赛若意外返回 private leaderboard，构建会拒绝发布该比赛。
 - 构建后会扫描允许的文本产物，拒绝 token 值、凭据变量名、原始成员字段、`.env`、CSV、ZIP、日志、未知文件类型和符号链接。
 - 不启用 Kaggle SDK 的 `VERBOSE` / `VERBOSE_OUTPUT`，避免请求头进入日志。
-- GitHub Actions 第三方步骤固定到完整 commit SHA，checkout 不保留 token；build 与 deploy 使用各自最小 job 权限。Hugo 二进制固定版本并校验 SHA-256。
-- Pages artifact 只上传 `public/`，不会上传工作目录、原始 ZIP 或 `.env`。
+- GitHub Actions 第三方步骤固定到完整 commit SHA；构建 checkout 不保留 token，publish checkout 只在无 Kaggle Secret 的独立 job 中使用仓库写入凭据。Hugo 二进制固定版本并校验 SHA-256。
+- Pages artifact 和 `gh-pages` 分支只包含 `public/`，不会包含工作目录、原始 ZIP 或 `.env`。
 
 建议 CI 使用一个没有比赛 host/admin 权限的专用 Kaggle 账号，进一步缩小 token 权限面。
 
