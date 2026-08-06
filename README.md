@@ -108,7 +108,7 @@ Repository Secret 只能由有权限的仓库维护者写入，普通用户不�
 - 每天 `02:17 UTC`（新加坡时间 `10:17`）
 - 手动 `workflow_dispatch`
 
-Secret 只注入数据生成和公开产物泄漏检查步骤；Hugo、Pages 上传和部署步骤拿不到 Kaggle token。工作流使用只读仓库权限、Pages OIDC、固定版本和固定 action commit SHA。迁移后的首次 Pages 发布可能排队超过默认的 10 分钟，因此 deploy action 等待 30 分钟，job 上限为 40 分钟。Pull request 只运行 [无密钥 CI](.github/workflows/ci.yml)，用合成数据验证 Python、Hugo 和公开产物扫描，不使用 `pull_request_target`，也不读取 secrets。
+Secret 只注入数据生成和公开产物泄漏检查步骤；Hugo、Pages 上传和部署步骤拿不到 Kaggle token。工作流使用只读仓库权限、Pages OIDC、固定版本和固定 action commit SHA。GitHub 官方 `deploy-pages` action 把等待上限固定为 10 分钟；仓库迁移后的发布和旧锁释放可能超过该上限，因此部署 job 使用固定版本的 `github-script` 调用同一官方 Pages API，等待旧锁释放并持续轮询发布终态。Pull request 只运行 [无密钥 CI](.github/workflows/ci.yml)，用合成数据验证 Python、Hugo 和公开产物扫描，不使用 `pull_request_target`，也不读取 secrets。
 
 > `KAGGLE_TEAMS` 可以作为 Secret 隐藏仓库中的输入配置，但 team name 会出现在最终静态 HTML 中。公开 GitHub Pages 与“team name 本身保密”无法同时成立。
 

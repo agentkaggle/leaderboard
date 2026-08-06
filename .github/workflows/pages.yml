@@ -22,6 +22,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    outputs:
+      artifact_id: ${{ steps.pages-artifact.outputs.artifact_id }}
     permissions:
       contents: read
       pages: read
@@ -83,6 +85,7 @@ jobs:
         run: uv run python scripts/check_public_artifact.py public data/leaderboard.json
 
       - name: Upload Pages artifact
+        id: pages-artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: public
@@ -93,13 +96,141 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 40
+    timeout-minutes: 90
     permissions:
       pages: write
       id-token: write
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PAGES_ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+          PAGES_DEPLOYMENT_TIMEOUT_MS: "2100000"
+          PAGES_LOCK_TIMEOUT_MS: "2700000"
         with:
-          timeout: 1800000
+          github-token: ${{ github.token }}
+          script: |
+            const artifactId = Number(process.env.PAGES_ARTIFACT_ID)
+            const timeoutMs = Number(process.env.PAGES_DEPLOYMENT_TIMEOUT_MS)
+            const lockTimeoutMs = Number(process.env.PAGES_LOCK_TIMEOUT_MS)
+            if (!Number.isSafeInteger(artifactId) || artifactId <= 0) {
+              throw new Error('Pages artifact ID is missing or invalid.')
+            }
+            if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+              throw new Error('Pages deployment timeout is invalid.')
+            }
+            if (!Number.isSafeInteger(lockTimeoutMs) || lockTimeoutMs <= 0) {
+              throw new Error('Pages deployment lock timeout is invalid.')
+            }
+
+            const idToken = await core.getIDToken()
+            const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
+            const lockDeadline = Date.now() + lockTimeoutMs
+            const cancelledBlockers = new Set()
+            let deployment
+
+            while (!deployment) {
+              try {
+                const response = await github.request(
+                  'POST /repos/{owner}/{repo}/pages/deployments',
+                  {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    artifact_id: artifactId,
+                    pages_build_version: context.sha,
+                    oidc_token: idToken,
+                  },
+                )
+                deployment = response.data
+              } catch (error) {
+                const message = error.response?.data?.message ?? error.message ?? ''
+                const blocker = message.match(/Please cancel ([0-9a-f]{40}) first/i)?.[1]
+                if (error.status !== 400 || !blocker) throw error
+                if (Date.now() >= lockDeadline) {
+                  throw new Error(`Pages deployment ${blocker} did not release its lock.`)
+                }
+
+                core.warning(`Waiting for blocking Pages deployment ${blocker}.`)
+                if (!cancelledBlockers.has(blocker)) {
+                  try {
+                    await github.request(
+                      'POST /repos/{owner}/{repo}/pages/deployments/{deployment_id}/cancel',
+                      {
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        deployment_id: blocker,
+                      },
+                    )
+                  } catch (cancelError) {
+                    core.warning(
+                      `Unable to cancel blocking deployment (${cancelError.status ?? 'unknown'}).`,
+                    )
+                  }
+                  cancelledBlockers.add(blocker)
+                }
+                await sleep(15000)
+              }
+            }
+
+            const deploymentId = deployment.id
+              ?? deployment.status_url?.split('/').pop()
+              ?? context.sha
+            core.setOutput('page_url', deployment.page_url ?? '')
+            core.info(`Created Pages deployment ${deploymentId}.`)
+
+            const finalErrors = new Map([
+              ['deployment_failed', 'Deployment failed.'],
+              ['deployment_content_failed', 'Pages rejected the artifact content.'],
+              ['deployment_cancelled', 'Deployment was cancelled.'],
+              ['deployment_lost', 'Deployment stopped reporting status.'],
+            ])
+            const deadline = Date.now() + timeoutMs
+            let requestErrors = 0
+
+            while (Date.now() < deadline) {
+              await sleep(5000)
+
+              let status
+              try {
+                const response = await github.request(
+                  'GET /repos/{owner}/{repo}/pages/deployments/{deployment_id}',
+                  {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    deployment_id: deploymentId,
+                  },
+                )
+                status = response.data.status
+                requestErrors = 0
+              } catch (error) {
+                requestErrors += 1
+                core.warning(`Pages status request failed (${error.status ?? 'unknown'}).`)
+                if (requestErrors < 10) continue
+                break
+              }
+
+              core.info(`Current Pages deployment status: ${status}`)
+              if (status === 'succeed') return
+              if (finalErrors.has(status)) {
+                throw new Error(finalErrors.get(status))
+              }
+            }
+
+            try {
+              await github.request(
+                'POST /repos/{owner}/{repo}/pages/deployments/{deployment_id}/cancel',
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  deployment_id: deploymentId,
+                },
+              )
+            } catch (error) {
+              core.warning(`Unable to cancel timed-out Pages deployment (${error.status ?? 'unknown'}).`)
+            }
+            throw new Error(
+              requestErrors >= 10
+                ? 'Too many Pages status request errors.'
+                : `Pages deployment did not finish within ${timeoutMs} ms.`,
+            )
