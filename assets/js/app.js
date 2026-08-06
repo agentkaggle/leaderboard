@@ -34,6 +34,7 @@
 
   const teamBoardTabs = [...document.querySelectorAll("[data-team-board-target]")];
   const teamBoards = [...document.querySelectorAll("[data-team-board]")];
+  const teamSortOrder = document.querySelector("#team-sort-order");
   const selectTeamBoard = (name, focus = false) => {
     teamBoardTabs.forEach((tab) => {
       const selected = tab.dataset.teamBoardTarget === name;
@@ -56,6 +57,46 @@
     });
   });
   if (teamBoardTabs.length) selectTeamBoard("overall");
+
+  const teamBoardStates = teamBoards
+    .map((board) => {
+      const body = board.querySelector("tbody");
+      const rows = body ? [...body.querySelectorAll("tr[data-last-submission-date]")] : [];
+      return { body, rows, defaultOrder: new Map(rows.map((row, index) => [row, index])) };
+    })
+    .filter((state) => state.body);
+
+  const sortTeamBoards = () => {
+    const sort = teamSortOrder?.value || "ranking";
+    const direction = sort === "updated-asc" ? 1 : -1;
+
+    teamBoardStates.forEach(({ body, rows, defaultOrder }) => {
+      const timestamps = new Map(
+        rows.map((row) => {
+          const timestamp = Date.parse(row.dataset.lastSubmissionDate);
+          return [row, Number.isNaN(timestamp) ? null : timestamp];
+        }),
+      );
+      const orderedRows = [...rows].sort((left, right) => {
+        if (sort === "ranking") return defaultOrder.get(left) - defaultOrder.get(right);
+
+        const leftTime = timestamps.get(left);
+        const rightTime = timestamps.get(right);
+        if (leftTime === null && rightTime === null) {
+          return defaultOrder.get(left) - defaultOrder.get(right);
+        }
+        if (leftTime === null) return 1;
+        if (rightTime === null) return -1;
+        return direction * (leftTime - rightTime) || defaultOrder.get(left) - defaultOrder.get(right);
+      });
+      body.append(...orderedRows);
+    });
+  };
+
+  if (teamSortOrder) {
+    teamSortOrder.addEventListener("change", sortTeamBoards);
+    sortTeamBoards();
+  }
 
   if (!cards.length || !search || !teamFilter || !categoryFilter || !stateFilter) return;
 

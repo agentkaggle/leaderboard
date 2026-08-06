@@ -74,6 +74,7 @@ class FixtureConsistencyTests(unittest.TestCase):
             self.assertEqual(positions, list(range(1, len(positions) + 1)))
             for team in leaderboard:
                 selected_results = []
+                submission_dates = []
                 competition_count = 0
                 official_medals = 0
                 for competition in competitions:
@@ -105,9 +106,11 @@ class FixtureConsistencyTests(unittest.TestCase):
                     if mode == "ongoing":
                         selected = official_result
                         has_result = official_result is not None
+                        relevant_dates = (entry["submission_date"],)
                     elif mode == "late":
                         selected = late_result
                         has_result = bool(entry["late_submission_date"])
+                        relevant_dates = (entry["late_submission_date"],)
                     else:
                         selected = min(
                             [
@@ -121,6 +124,11 @@ class FixtureConsistencyTests(unittest.TestCase):
                         has_result = official_result is not None or bool(
                             entry["late_submission_date"]
                         )
+                        relevant_dates = (
+                            entry["submission_date"],
+                            entry["late_submission_date"],
+                        )
+                    submission_dates.extend(date for date in relevant_dates if date)
                     competition_count += has_result
                     if selected is not None:
                         selected_results.append(selected)
@@ -148,6 +156,10 @@ class FixtureConsistencyTests(unittest.TestCase):
                 self.assertEqual(
                     team["late_submission_count"],
                     len(team_late_submissions) if mode in {"overall", "late"} else 0,
+                )
+                self.assertEqual(
+                    team["last_submission_date"],
+                    max(submission_dates, default=""),
                 )
 
         for late_submission in late_submissions:

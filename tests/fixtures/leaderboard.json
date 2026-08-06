@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "generated_at": "2026-07-17T01:00:00Z",
   "status": "partial",
   "summary": {
@@ -18,19 +18,19 @@
     "error_counts": {"access_denied": 2}
   },
   "teams": [
-    {"position": 1, "name": "Neural Nomads", "competition_count": 3, "best_rank": 7, "average_top_percent": 1.5879, "medal_candidate_count": 1, "late_submission_count": 1},
-    {"position": 2, "name": "Gradient Guild", "competition_count": 2, "best_rank": 12, "average_top_percent": 2.7361, "medal_candidate_count": 2, "late_submission_count": 1},
-    {"position": 3, "name": "Bayes & Beyond", "competition_count": 1, "best_rank": 63, "average_top_percent": 6.3, "medal_candidate_count": 1, "late_submission_count": 0}
+    {"position": 1, "name": "Neural Nomads", "competition_count": 3, "best_rank": 7, "average_top_percent": 1.5879, "medal_candidate_count": 1, "late_submission_count": 1, "last_submission_date": "2026-07-16T08:42:00Z"},
+    {"position": 2, "name": "Gradient Guild", "competition_count": 2, "best_rank": 12, "average_top_percent": 2.7361, "medal_candidate_count": 2, "late_submission_count": 1, "last_submission_date": "2026-07-15T15:11:00Z"},
+    {"position": 3, "name": "Bayes & Beyond", "competition_count": 1, "best_rank": 63, "average_top_percent": 6.3, "medal_candidate_count": 1, "late_submission_count": 0, "last_submission_date": "2026-06-30T19:44:00Z"}
   ],
   "late_teams": [
-    {"position": 1, "name": "Gradient Guild", "competition_count": 1, "best_rank": 12, "average_top_percent": 1.2, "medal_candidate_count": 0, "late_submission_count": 1},
-    {"position": 2, "name": "Neural Nomads", "competition_count": 1, "best_rank": 15, "average_top_percent": 1.5, "medal_candidate_count": 0, "late_submission_count": 1},
-    {"position": null, "name": "Bayes & Beyond", "competition_count": 0, "best_rank": null, "average_top_percent": null, "medal_candidate_count": 0, "late_submission_count": 0}
+    {"position": 1, "name": "Gradient Guild", "competition_count": 1, "best_rank": 12, "average_top_percent": 1.2, "medal_candidate_count": 0, "late_submission_count": 1, "last_submission_date": "2026-07-08T13:40:00Z"},
+    {"position": 2, "name": "Neural Nomads", "competition_count": 1, "best_rank": 15, "average_top_percent": 1.5, "medal_candidate_count": 0, "late_submission_count": 1, "last_submission_date": "2026-07-10T09:15:00Z"},
+    {"position": null, "name": "Bayes & Beyond", "competition_count": 0, "best_rank": null, "average_top_percent": null, "medal_candidate_count": 0, "late_submission_count": 0, "last_submission_date": ""}
   ],
   "ongoing_teams": [
-    {"position": 1, "name": "Neural Nomads", "competition_count": 2, "best_rank": 7, "average_top_percent": 1.6319, "medal_candidate_count": 1, "late_submission_count": 0},
-    {"position": 2, "name": "Gradient Guild", "competition_count": 2, "best_rank": 18, "average_top_percent": 3.0361, "medal_candidate_count": 2, "late_submission_count": 0},
-    {"position": 3, "name": "Bayes & Beyond", "competition_count": 1, "best_rank": 63, "average_top_percent": 6.3, "medal_candidate_count": 1, "late_submission_count": 0}
+    {"position": 1, "name": "Neural Nomads", "competition_count": 2, "best_rank": 7, "average_top_percent": 1.6319, "medal_candidate_count": 1, "late_submission_count": 0, "last_submission_date": "2026-07-16T08:42:00Z"},
+    {"position": 2, "name": "Gradient Guild", "competition_count": 2, "best_rank": 18, "average_top_percent": 3.0361, "medal_candidate_count": 2, "late_submission_count": 0, "last_submission_date": "2026-07-15T15:11:00Z"},
+    {"position": 3, "name": "Bayes & Beyond", "competition_count": 1, "best_rank": 63, "average_top_percent": 6.3, "medal_candidate_count": 1, "late_submission_count": 0, "last_submission_date": "2026-06-30T19:44:00Z"}
   ],
   "competitions": [
     {

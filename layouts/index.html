@@ -114,15 +114,25 @@
               <button type="button" role="tab" aria-selected="false" aria-controls="team-board-ongoing" data-team-board-target="ongoing">Ongoing 榜</button>
             </div>
           </div>
-          <p class="late-rank-note">* Late Submission 推算位次：将赛后分数与该比赛完整榜单分数比较，不是 Kaggle 官方 Rank。</p>
+          <div class="team-table-tools">
+            <p class="late-rank-note">* Late Submission 推算位次：将赛后分数与该比赛完整榜单分数比较，不是 Kaggle 官方 Rank。</p>
+            <label class="team-sort-field">
+              <span>排序</span>
+              <select id="team-sort-order">
+                <option value="updated-desc">最近更新优先</option>
+                <option value="updated-asc">最早更新优先</option>
+                <option value="ranking">榜单顺序</option>
+              </select>
+            </label>
+          </div>
           <div id="team-board-overall" class="table-wrap team-board" data-team-board="overall" role="tabpanel">
             <table class="summary-table">
               <thead>
-                <tr><th scope="col">总榜*</th><th scope="col">团队</th><th scope="col">比赛</th><th scope="col">最佳位次*</th><th scope="col">平均 Top%*</th><th scope="col">奖牌候选区</th><th scope="col">赛后结果</th></tr>
+                <tr><th scope="col">总榜*</th><th scope="col">团队</th><th scope="col">比赛</th><th scope="col">最佳位次*</th><th scope="col">平均 Top%*</th><th scope="col">奖牌候选区</th><th scope="col">赛后结果</th><th scope="col">最后更新</th></tr>
               </thead>
               <tbody>
                 {{ range $data.teams }}
-                  <tr>
+                  <tr data-last-submission-date="{{ .last_submission_date }}">
                     <td>{{ if .position }}#{{ .position }}*{{ else }}—{{ end }}</td>
                     <th scope="row"><span class="team-dot" aria-hidden="true"></span>{{ .name }}</th>
                     <td>{{ .competition_count }}</td>
@@ -130,6 +140,7 @@
                     <td>{{ if ne .average_top_percent nil }}{{ lang.FormatNumberCustom 2 .average_top_percent }}%{{ else }}—{{ end }}</td>
                     <td>{{ .medal_candidate_count }}</td>
                     <td>{{ .late_submission_count }}</td>
+                    <td class="team-update">{{ with .last_submission_date }}<time class="local-time" datetime="{{ . }}">{{ . }}</time>{{ else }}—{{ end }}</td>
                   </tr>
                 {{ end }}
               </tbody>
@@ -138,17 +149,18 @@
           <div id="team-board-late" class="table-wrap team-board" data-team-board="late" role="tabpanel" hidden>
             <table class="summary-table">
               <thead>
-                <tr><th scope="col">Late 榜*</th><th scope="col">团队</th><th scope="col">Late 比赛</th><th scope="col">最佳位次*</th><th scope="col">平均 Top%*</th><th scope="col">赛后结果</th></tr>
+                <tr><th scope="col">Late 榜*</th><th scope="col">团队</th><th scope="col">Late 比赛</th><th scope="col">最佳位次*</th><th scope="col">平均 Top%*</th><th scope="col">赛后结果</th><th scope="col">最后更新</th></tr>
               </thead>
               <tbody>
                 {{ range $data.late_teams }}
-                  <tr>
+                  <tr data-last-submission-date="{{ .last_submission_date }}">
                     <td>{{ if .position }}#{{ .position }}*{{ else }}—{{ end }}</td>
                     <th scope="row"><span class="team-dot" aria-hidden="true"></span>{{ .name }}</th>
                     <td>{{ .competition_count }}</td>
                     <td>{{ if .best_rank }}#{{ .best_rank }}*{{ else }}—{{ end }}</td>
                     <td>{{ if ne .average_top_percent nil }}{{ lang.FormatNumberCustom 2 .average_top_percent }}%*{{ else }}—{{ end }}</td>
                     <td>{{ .late_submission_count }}</td>
+                    <td class="team-update">{{ with .last_submission_date }}<time class="local-time" datetime="{{ . }}">{{ . }}</time>{{ else }}—{{ end }}</td>
                   </tr>
                 {{ end }}
               </tbody>
@@ -157,17 +169,18 @@
           <div id="team-board-ongoing" class="table-wrap team-board" data-team-board="ongoing" role="tabpanel" hidden>
             <table class="summary-table">
               <thead>
-                <tr><th scope="col">Ongoing 榜</th><th scope="col">团队</th><th scope="col">正式比赛</th><th scope="col">最佳官方名次</th><th scope="col">平均 Top%</th><th scope="col">奖牌候选区</th></tr>
+                <tr><th scope="col">Ongoing 榜</th><th scope="col">团队</th><th scope="col">正式比赛</th><th scope="col">最佳官方名次</th><th scope="col">平均 Top%</th><th scope="col">奖牌候选区</th><th scope="col">最后更新</th></tr>
               </thead>
               <tbody>
                 {{ range $data.ongoing_teams }}
-                  <tr>
+                  <tr data-last-submission-date="{{ .last_submission_date }}">
                     <td>{{ if .position }}#{{ .position }}{{ else }}—{{ end }}</td>
                     <th scope="row"><span class="team-dot" aria-hidden="true"></span>{{ .name }}</th>
                     <td>{{ .competition_count }}</td>
                     <td>{{ if .best_rank }}#{{ .best_rank }}{{ else }}—{{ end }}</td>
                     <td>{{ if ne .average_top_percent nil }}{{ lang.FormatNumberCustom 2 .average_top_percent }}%{{ else }}—{{ end }}</td>
                     <td>{{ .medal_candidate_count }}</td>
+                    <td class="team-update">{{ with .last_submission_date }}<time class="local-time" datetime="{{ . }}">{{ . }}</time>{{ else }}—{{ end }}</td>
                   </tr>
                 {{ end }}
               </tbody>

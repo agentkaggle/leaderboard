@@ -158,7 +158,7 @@ class BuilderTests(unittest.TestCase):
             late_submission_failure_kinds=("access_denied",),
         )
 
-        self.assertEqual(payload["schema_version"], 4)
+        self.assertEqual(payload["schema_version"], 5)
         self.assertEqual(payload["summary"]["late_submission_account_count"], 2)
         self.assertEqual(payload["summary"]["failed_late_submission_account_count"], 1)
         self.assertEqual(payload["summary"]["late_submission_competition_count"], 1)
@@ -270,6 +270,18 @@ class BuilderTests(unittest.TestCase):
             "2026-07-01T00:00:00Z",
         )
         self.assertEqual(payload["teams"][0]["competition_count"], 1)
+        self.assertEqual(
+            payload["teams"][0]["last_submission_date"],
+            "2026-07-01T00:00:00Z",
+        )
+        self.assertEqual(
+            payload["late_teams"][0]["last_submission_date"],
+            "2026-07-01T00:00:00Z",
+        )
+        self.assertEqual(
+            payload["ongoing_teams"][0]["last_submission_date"],
+            "2026-06-01T00:00:00Z",
+        )
 
     def test_late_only_team_result_keeps_known_competition_metadata(self) -> None:
         class RankedLateSource(FakeSource):

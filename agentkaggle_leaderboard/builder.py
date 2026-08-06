@@ -46,6 +46,19 @@ def _iso_utc(value: datetime | None) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _submission_datetime(value: object) -> datetime | None:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def _competition_state(deadline: datetime | None, generated_at: datetime) -> str:
     if deadline is None:
         return "unknown"
@@ -336,6 +349,7 @@ def _team_board(
     }
     late_counts = Counter(str(entry["team_name"]) for entry in late_submissions)
     official_medal_counts = Counter()
+    last_submission_by_team: dict[str, datetime | None] = {team: None for team in teams}
 
     for competition in competitions:
         for entry in competition["entries"]:  # type: ignore[index]
@@ -359,9 +373,11 @@ def _team_board(
             if mode == "ongoing":
                 selected_result = official_result
                 has_result = official_result is not None
+                submission_dates = (entry["submission_date"],)  # type: ignore[index]
             elif mode == "late":
                 selected_result = late_result
                 has_result = bool(entry["late_submission_date"])  # type: ignore[index]
+                submission_dates = (entry["late_submission_date"],)  # type: ignore[index]
             elif mode == "overall":
                 available_results = [
                     result
@@ -376,9 +392,20 @@ def _team_board(
                 has_result = official_result is not None or bool(  # type: ignore[index]
                     entry["late_submission_date"]
                 )
+                submission_dates = (  # type: ignore[index]
+                    entry["submission_date"],
+                    entry["late_submission_date"],
+                )
             else:
                 raise ValueError("Unsupported team leaderboard mode")
 
+            for submission_date in submission_dates:
+                parsed_date = _submission_datetime(submission_date)
+                if parsed_date is not None and (
+                    last_submission_by_team[team_name] is None
+                    or parsed_date > last_submission_by_team[team_name]
+                ):
+                    last_submission_by_team[team_name] = parsed_date
             if has_result:
                 competition_slugs_by_team[team_name].add(slug)
             if selected_result is not None:
@@ -401,6 +428,7 @@ def _team_board(
                 "late_submission_count": (
                     late_counts[team] if mode in {"overall", "late"} else 0
                 ),
+                "last_submission_date": _iso_utc(last_submission_by_team[team]),
             }
         )
     ordered = sorted(
@@ -530,7 +558,7 @@ def build_leaderboard(
     )
 
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "generated_at": _iso_utc(generated_at),
         "status": status,
         "summary": {

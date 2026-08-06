@@ -43,6 +43,7 @@ PUBLIC_KEYS = {
         "average_top_percent",
         "medal_candidate_count",
         "late_submission_count",
+        "last_submission_date",
     },
     "competition": {
         "slug",
