@@ -1,5 +1,7 @@
 # Kaggle Team Radar
 
+线上榜单：[https://agentkaggle.github.io/leaderboard/](https://agentkaggle.github.io/leaderboard/)
+
 从环境变量读取一组 Kaggle team name，扫描 Kaggle 的公开比赛目录，匹配完整 leaderboard，并使用授权账户的 My Submissions 补充赛后提交分数，生成一个可部署到 GitHub Pages 的聚合榜单。
 
 页面只保留至少命中一个目标团队的比赛，展示：
