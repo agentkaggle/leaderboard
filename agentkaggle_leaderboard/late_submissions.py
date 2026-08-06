@@ -12,7 +12,11 @@ from .kaggle_source import (
     competition_from_api,
     competition_slug,
 )
-from .models import Competition, LateSubmissionEntry
+from .models import (
+    AuthenticatedSubmissionScoreEntry,
+    Competition,
+    LateSubmissionEntry,
+)
 from .settings import normalize_team_name
 
 
@@ -25,6 +29,7 @@ def _as_utc(value: datetime) -> datetime:
 @dataclass(frozen=True, slots=True)
 class LateSubmissionScan:
     entries: tuple[LateSubmissionEntry, ...]
+    authenticated_scores: tuple[AuthenticatedSubmissionScoreEntry, ...]
     discovered_team_names: tuple[str, ...]
     entered_competitions: tuple[Competition, ...]
 
@@ -33,6 +38,7 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
     CATALOG_PAGE_SIZE = 20
     SUBMISSION_PAGE_SIZE = 100
     MAX_CATALOG_PAGES = 1000
+    MAX_SUBMISSION_PAGES = 1000
 
     def _list_entered_competitions(self) -> list[object]:
         competitions: list[object] = []
@@ -85,28 +91,34 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
         *,
         discover_teams: bool,
         include_late_submissions: bool,
-    ) -> tuple[list[LateSubmissionEntry], dict[str, str]]:
+        include_authenticated_scores: bool,
+    ) -> tuple[
+        list[LateSubmissionEntry],
+        list[AuthenticatedSubmissionScoreEntry],
+        dict[str, str],
+    ]:
         entries: list[LateSubmissionEntry] = []
+        authenticated_scores: list[AuthenticatedSubmissionScoreEntry] = []
         discovered_teams: dict[str, str] = {}
         page_token = ""
         seen_page_tokens: set[str] = set()
+        page_count = 0
 
         while True:
+            page_count += 1
+            if page_count > self.MAX_SUBMISSION_PAGES:
+                raise InvalidKaggleResponse(
+                    "Kaggle submission history exceeded the page limit"
+                )
             response = self._call_with_retry(
                 lambda page_token=page_token: self._list_submission_page(slug, page_token)
             )
             submissions = list(response.submissions or []) if response else []
-            oldest_submission: datetime | None = None
 
             for submission in submissions:
                 if submission is None or submission.date is None:
                     continue
                 submitted_at = _as_utc(submission.date)
-                oldest_submission = (
-                    submitted_at
-                    if oldest_submission is None
-                    else min(oldest_submission, submitted_at)
-                )
                 status_name = str(getattr(submission.status, "name", "")).casefold()
                 if status_name != "complete":
                     continue
@@ -120,6 +132,24 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
                     configured_name = configured_name or discovered_teams[team_key]
                 if configured_name is None:
                     continue
+                public_score = str(submission.public_score or "").strip()
+                private_score = str(submission.private_score or "").strip()
+                if (
+                    include_authenticated_scores
+                    and deadline is not None
+                    and submitted_at <= deadline
+                    and public_score
+                    and private_score
+                ):
+                    authenticated_scores.append(
+                        AuthenticatedSubmissionScoreEntry(
+                            competition_slug=slug,
+                            configured_team_name=configured_name,
+                            public_score=public_score,
+                            private_score=private_score,
+                            submission_date=submitted_at,
+                        )
+                    )
                 if (
                     not include_late_submissions
                     or deadline is None
@@ -133,20 +163,14 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
                         competition_url=f"https://www.kaggle.com/competitions/{slug}",
                         deadline=deadline,
                         configured_team_name=configured_name,
-                        public_score=str(submission.public_score or "").strip(),
-                        private_score=str(submission.private_score or "").strip(),
+                        public_score=public_score,
+                        private_score=private_score,
                         submission_date=submitted_at,
                     )
                 )
 
             next_page_token = str(getattr(response, "next_page_token", "") or "")
-            if not include_late_submissions:
-                break
-            if (
-                deadline is not None
-                and oldest_submission is not None
-                and oldest_submission <= deadline
-            ):
+            if not include_late_submissions and not include_authenticated_scores:
                 break
             if not next_page_token:
                 break
@@ -155,7 +179,7 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
             seen_page_tokens.add(next_page_token)
             page_token = next_page_token
 
-        return entries, discovered_teams
+        return entries, authenticated_scores, discovered_teams
 
     def collect(
         self,
@@ -166,6 +190,7 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
     ) -> LateSubmissionScan:
         current_time = _as_utc(now or datetime.now(timezone.utc))
         collected: list[LateSubmissionEntry] = []
+        collected_authenticated_scores: list[AuthenticatedSubmissionScoreEntry] = []
         discovered_teams: dict[str, str] = {}
         entered_competitions = tuple(
             competition_from_api(item) for item in self._list_entered_competitions()
@@ -178,17 +203,26 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
                 else None
             )
             include_late_submissions = deadline is not None and deadline < current_time
-            if not discover_teams and not include_late_submissions:
+            include_authenticated_scores = include_late_submissions
+            if (
+                not discover_teams
+                and not include_late_submissions
+                and not include_authenticated_scores
+            ):
                 continue
-            entries, competition_teams = self._competition_submissions(
-                competition.slug,
-                competition.title,
-                deadline,
-                normalized_teams,
-                discover_teams=discover_teams,
-                include_late_submissions=include_late_submissions,
+            entries, authenticated_scores, competition_teams = (
+                self._competition_submissions(
+                    competition.slug,
+                    competition.title,
+                    deadline,
+                    normalized_teams,
+                    discover_teams=discover_teams,
+                    include_late_submissions=include_late_submissions,
+                    include_authenticated_scores=include_authenticated_scores,
+                )
             )
             collected.extend(entries)
+            collected_authenticated_scores.extend(authenticated_scores)
             for team_key, team_name in competition_teams.items():
                 discovered_teams.setdefault(team_key, team_name)
 
@@ -212,8 +246,29 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
                 ),
             )
         )
+        unique_authenticated_scores = {
+            (
+                entry.competition_slug,
+                entry.configured_team_name,
+                entry.submission_date,
+                entry.public_score,
+                entry.private_score,
+            ): entry
+            for entry in collected_authenticated_scores
+        }
+        authenticated_scores = tuple(
+            sorted(
+                unique_authenticated_scores.values(),
+                key=lambda entry: (
+                    entry.competition_slug,
+                    entry.configured_team_name.casefold(),
+                    -entry.submission_date.timestamp(),
+                ),
+            )
+        )
         return LateSubmissionScan(
             entries=entries,
+            authenticated_scores=authenticated_scores,
             discovered_team_names=tuple(discovered_teams.values()),
             entered_competitions=entered_competitions,
         )

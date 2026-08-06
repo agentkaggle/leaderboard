@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "generated_at": "2026-07-17T01:00:00Z",
   "status": "partial",
   "summary": {
@@ -13,6 +13,7 @@
     "failed_late_submission_account_count": 0,
     "late_submission_competition_count": 1,
     "late_submission_count": 2,
+    "authenticated_private_score_count": 1,
     "late_submission_error_counts": {},
     "truncated": false,
     "error_counts": {"access_denied": 2}
@@ -46,8 +47,8 @@
       "api_team_count": 1264,
       "awards_points": true,
       "entries": [
-        {"team_name": "Neural Nomads", "rank": 7, "top_percent": 0.5538, "score": "0.982731", "submission_date": "2026-07-16T08:42:00Z", "medal_candidate": "gold", "late_public_score": "", "late_private_score": "", "late_submission_date": "", "late_rank": null, "late_top_percent": null, "late_rank_team_count": null},
-        {"team_name": "Gradient Guild", "rank": 54, "top_percent": 4.2722, "score": "0.971084", "submission_date": "2026-07-15T15:11:00Z", "medal_candidate": "silver", "late_public_score": "", "late_private_score": "", "late_submission_date": "", "late_rank": null, "late_top_percent": null, "late_rank_team_count": null}
+        {"team_name": "Neural Nomads", "rank": 7, "top_percent": 0.5538, "score": "0.982731", "authenticated_private_score": "", "authenticated_private_submission_date": "", "submission_date": "2026-07-16T08:42:00Z", "medal_candidate": "gold", "late_public_score": "", "late_private_score": "", "late_submission_date": "", "late_rank": null, "late_top_percent": null, "late_rank_team_count": null},
+        {"team_name": "Gradient Guild", "rank": 54, "top_percent": 4.2722, "score": "0.971084", "authenticated_private_score": "", "authenticated_private_submission_date": "", "submission_date": "2026-07-15T15:11:00Z", "medal_candidate": "silver", "late_public_score": "", "late_private_score": "", "late_submission_date": "", "late_rank": null, "late_top_percent": null, "late_rank_team_count": null}
       ]
     },
     {
@@ -63,9 +64,9 @@
       "api_team_count": 1003,
       "awards_points": true,
       "entries": [
-        {"team_name": "Gradient Guild", "rank": 18, "top_percent": 1.8, "score": "0.11489231", "submission_date": "2026-06-30T21:04:00Z", "medal_candidate": "silver", "late_public_score": "0.11277", "late_private_score": "0.11421", "late_submission_date": "2026-07-08T13:40:00Z", "late_rank": 12, "late_top_percent": 1.2, "late_rank_team_count": 1000},
-        {"team_name": "Bayes & Beyond", "rank": 63, "top_percent": 6.3, "score": "0.11840777", "submission_date": "2026-06-30T19:44:00Z", "medal_candidate": "bronze", "late_public_score": "", "late_private_score": "", "late_submission_date": "", "late_rank": null, "late_top_percent": null, "late_rank_team_count": null},
-        {"team_name": "Neural Nomads", "rank": null, "top_percent": null, "score": "", "submission_date": "", "medal_candidate": "unavailable", "late_public_score": "0.11391", "late_private_score": "0.11502", "late_submission_date": "2026-07-10T09:15:00Z", "late_rank": 15, "late_top_percent": 1.5, "late_rank_team_count": 1000}
+        {"team_name": "Gradient Guild", "rank": 18, "top_percent": 1.8, "score": "0.11489231", "authenticated_private_score": "", "authenticated_private_submission_date": "", "submission_date": "2026-06-30T21:04:00Z", "medal_candidate": "silver", "late_public_score": "0.11277", "late_private_score": "0.11421", "late_submission_date": "2026-07-08T13:40:00Z", "late_rank": 12, "late_top_percent": 1.2, "late_rank_team_count": 1000},
+        {"team_name": "Bayes & Beyond", "rank": 63, "top_percent": 6.3, "score": "0.11840777", "authenticated_private_score": "", "authenticated_private_submission_date": "", "submission_date": "2026-06-30T19:44:00Z", "medal_candidate": "bronze", "late_public_score": "", "late_private_score": "", "late_submission_date": "", "late_rank": null, "late_top_percent": null, "late_rank_team_count": null},
+        {"team_name": "Neural Nomads", "rank": null, "top_percent": null, "score": "", "authenticated_private_score": "", "authenticated_private_submission_date": "", "submission_date": "", "medal_candidate": "unavailable", "late_public_score": "0.11391", "late_private_score": "0.11502", "late_submission_date": "2026-07-10T09:15:00Z", "late_rank": 15, "late_top_percent": 1.5, "late_rank_team_count": 1000}
       ]
     },
     {
@@ -76,12 +77,12 @@
       "reward": "Swag",
       "deadline": "2026-05-01T23:59:00Z",
       "state": "ended",
-      "leaderboard_kind": "private",
+      "leaderboard_kind": "public",
       "leaderboard_team_count": 369,
       "api_team_count": 369,
       "awards_points": false,
       "entries": [
-        {"team_name": "Neural Nomads", "rank": 10, "top_percent": 2.7100, "score": "0.83420", "submission_date": "2026-05-01T22:10:00Z", "medal_candidate": "not_eligible", "late_public_score": "", "late_private_score": "", "late_submission_date": "", "late_rank": null, "late_top_percent": null, "late_rank_team_count": null}
+        {"team_name": "Neural Nomads", "rank": 10, "top_percent": 2.7100, "score": "0.83420", "authenticated_private_score": "0.81234", "authenticated_private_submission_date": "2026-05-01T22:10:00Z", "submission_date": "2026-05-01T22:10:00Z", "medal_candidate": "not_eligible", "late_public_score": "", "late_private_score": "", "late_submission_date": "", "late_rank": null, "late_top_percent": null, "late_rank_team_count": null}
       ]
     }
   ],
@@ -111,6 +112,7 @@
     "rank": "Official Rank from Kaggle's complete leaderboard CSV.",
     "top_percent": "Best official rank per competition divided by the deduplicated team count, multiplied by 100.",
     "score": "Score is preserved as text exactly as provided by Kaggle.",
+    "authenticated_private_score": "Private score from an authenticated pre-deadline submission whose public score uniquely matches the official public leaderboard score.",
     "late_submission": "Best completed post-deadline result per team and competition; it is not an official rank.",
     "medal_candidate": "Rank-only estimate; eligibility is not guaranteed."
   }

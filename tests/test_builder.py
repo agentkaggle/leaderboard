@@ -10,6 +10,7 @@ from agentkaggle_leaderboard.kaggle_source import (
     KaggleAuthenticationError,
 )
 from agentkaggle_leaderboard.models import (
+    AuthenticatedSubmissionScoreEntry,
     Competition,
     LateSubmissionEntry,
     LeaderboardEntry,
@@ -158,7 +159,7 @@ class BuilderTests(unittest.TestCase):
             late_submission_failure_kinds=("access_denied",),
         )
 
-        self.assertEqual(payload["schema_version"], 5)
+        self.assertEqual(payload["schema_version"], 6)
         self.assertEqual(payload["summary"]["late_submission_account_count"], 2)
         self.assertEqual(payload["summary"]["failed_late_submission_account_count"], 1)
         self.assertEqual(payload["summary"]["late_submission_competition_count"], 1)
@@ -197,6 +198,117 @@ class BuilderTests(unittest.TestCase):
             },
         )
         validate_public_payload(payload)
+
+    def test_authenticated_private_score_matches_ended_public_result(self) -> None:
+        class EndedPublicSource:
+            competition = Competition(
+                slug="ended-public",
+                title="Ended public competition",
+                url="https://www.kaggle.com/competitions/ended-public",
+                category="Featured",
+                reward="",
+                deadline=datetime(2026, 6, 1, tzinfo=timezone.utc),
+                api_team_count=100,
+            )
+
+            def list_competitions(self, max_competitions=None):
+                return [self.competition]
+
+            def get_leaderboard(self, competition, normalized_teams):
+                return LeaderboardSnapshot(
+                    team_count=100,
+                    kind="public",
+                    matches=(
+                        LeaderboardEntry(
+                            "Alpha", 25, "7.229", "2026-06-01T00:00:00Z"
+                        ),
+                    ),
+                    score_order="lower",
+                    score_values=("6.0", "7.229", "8.0"),
+                )
+
+        authenticated_score = AuthenticatedSubmissionScoreEntry(
+            competition_slug="ended-public",
+            configured_team_name="Alpha",
+            public_score="7.2290",
+            private_score="9.595",
+            submission_date=datetime(2026, 5, 31, tzinfo=timezone.utc),
+        )
+        payload = build_leaderboard(
+            EndedPublicSource(),
+            Settings(("Alpha",), workers=1),
+            generated_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            authenticated_submission_scores=(authenticated_score,),
+        )
+
+        entry = payload["competitions"][0]["entries"][0]
+        self.assertEqual(entry["authenticated_private_score"], "9.595")
+        self.assertEqual(
+            entry["authenticated_private_submission_date"],
+            "2026-05-31T00:00:00Z",
+        )
+        self.assertEqual(payload["summary"]["authenticated_private_score_count"], 1)
+        validate_public_payload(payload)
+
+        active_payload = build_leaderboard(
+            EndedPublicSource(),
+            Settings(("Alpha",), workers=1),
+            generated_at=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            authenticated_submission_scores=(authenticated_score,),
+        )
+        active_entry = active_payload["competitions"][0]["entries"][0]
+        self.assertEqual(active_entry["authenticated_private_score"], "")
+        self.assertEqual(
+            active_payload["summary"]["authenticated_private_score_count"],
+            0,
+        )
+
+    def test_ambiguous_authenticated_private_score_is_not_published(self) -> None:
+        class EndedPublicSource:
+            competition = Competition(
+                slug="ended-public",
+                title="Ended public competition",
+                url="https://www.kaggle.com/competitions/ended-public",
+                category="Featured",
+                reward="",
+                deadline=datetime(2026, 6, 1, tzinfo=timezone.utc),
+                api_team_count=100,
+            )
+
+            def list_competitions(self, max_competitions=None):
+                return [self.competition]
+
+            def get_leaderboard(self, competition, normalized_teams):
+                return LeaderboardSnapshot(
+                    team_count=100,
+                    kind="public",
+                    matches=(
+                        LeaderboardEntry(
+                            "Alpha", 25, "0.90", "2026-06-01T00:00:00Z"
+                        ),
+                    ),
+                )
+
+        scores = tuple(
+            AuthenticatedSubmissionScoreEntry(
+                competition_slug="ended-public",
+                configured_team_name="Alpha",
+                public_score="0.90",
+                private_score=private_score,
+                submission_date=datetime(2026, 5, day, tzinfo=timezone.utc),
+            )
+            for day, private_score in ((30, "0.81"), (31, "0.82"))
+        )
+        payload = build_leaderboard(
+            EndedPublicSource(),
+            Settings(("Alpha",), workers=1),
+            generated_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            authenticated_submission_scores=scores,
+        )
+
+        entry = payload["competitions"][0]["entries"][0]
+        self.assertEqual(entry["authenticated_private_score"], "")
+        self.assertEqual(payload["summary"]["authenticated_private_score_count"], 0)
 
     def test_late_submissions_keep_the_best_score_per_team_and_competition(self) -> None:
         class LowerIsBetterSource:

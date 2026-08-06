@@ -111,12 +111,19 @@ class LateSubmissionSourceTests(unittest.TestCase):
         self.assertEqual(entries[0].configured_team_name, "Alpha")
         self.assertEqual(entries[0].public_score, "0.9")
         self.assertEqual(entries[0].private_score, "0.8")
+        self.assertEqual(len(scan.authenticated_scores), 2)
+        self.assertTrue(
+            all(
+                score.configured_team_name == "Alpha"
+                for score in scan.authenticated_scores
+            )
+        )
         self.assertEqual(
             [competition.slug for competition in scan.entered_competitions],
             ["ended", "active"],
         )
 
-    def test_submission_pagination_stops_after_reaching_deadline(self) -> None:
+    def test_submission_pagination_reads_predeadline_private_score_history(self) -> None:
         deadline = datetime(2026, 6, 1, tzinfo=timezone.utc)
         source = KaggleLateSubmissionSource(
             SimpleNamespace(), retry_attempts=1, min_request_interval_seconds=0.000001
@@ -126,12 +133,19 @@ class LateSubmissionSourceTests(unittest.TestCase):
 
         def list_page(slug: str, page_token: str):
             calls.append(page_token)
+            if page_token == "older":
+                return SimpleNamespace(
+                    submissions=[
+                        submission(datetime(2026, 5, 30, tzinfo=timezone.utc))
+                    ],
+                    next_page_token="",
+                )
             return SimpleNamespace(
                 submissions=[
                     submission(datetime(2026, 6, 2, tzinfo=timezone.utc)),
                     submission(datetime(2026, 5, 31, tzinfo=timezone.utc)),
                 ],
-                next_page_token="must-not-be-read",
+                next_page_token="older",
             )
 
         source._list_submission_page = list_page
@@ -141,8 +155,9 @@ class LateSubmissionSourceTests(unittest.TestCase):
         )
         entries = scan.entries
 
-        self.assertEqual(calls, [""])
+        self.assertEqual(calls, ["", "older"])
         self.assertEqual(len(entries), 1)
+        self.assertEqual(len(scan.authenticated_scores), 2)
 
     def test_auto_discovery_reads_the_latest_page_of_active_competitions(self) -> None:
         source = KaggleLateSubmissionSource(
@@ -178,6 +193,7 @@ class LateSubmissionSourceTests(unittest.TestCase):
 
         self.assertEqual(calls, [""])
         self.assertEqual(scan.entries, ())
+        self.assertEqual(scan.authenticated_scores, ())
         self.assertEqual(scan.discovered_team_names, ("Dynamic Team",))
 
     def test_auto_discovery_includes_unconfigured_late_submissions(self) -> None:
@@ -220,6 +236,24 @@ class LateSubmissionSourceTests(unittest.TestCase):
         )
 
         with self.assertRaises(InvalidKaggleResponse):
+            source.collect(
+                {"alpha": "Alpha"},
+                now=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            )
+
+    def test_submission_history_page_limit_is_enforced(self) -> None:
+        deadline = datetime(2026, 6, 1, tzinfo=timezone.utc)
+        source = KaggleLateSubmissionSource(
+            SimpleNamespace(), retry_attempts=1, min_request_interval_seconds=0.000001
+        )
+        source.MAX_SUBMISSION_PAGES = 1
+        source._list_entered_competitions = lambda: [competition("ended", deadline)]
+        source._list_submission_page = lambda slug, page_token: SimpleNamespace(
+            submissions=[submission(datetime(2026, 5, 31, tzinfo=timezone.utc))],
+            next_page_token="next",
+        )
+
+        with self.assertRaisesRegex(InvalidKaggleResponse, "page limit"):
             source.collect(
                 {"alpha": "Alpha"},
                 now=datetime(2026, 7, 1, tzinfo=timezone.utc),

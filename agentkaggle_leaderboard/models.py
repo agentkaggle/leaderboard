@@ -46,6 +46,15 @@ class LateSubmissionEntry:
     submission_date: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class AuthenticatedSubmissionScoreEntry:
+    competition_slug: str
+    configured_team_name: str
+    public_score: str
+    private_score: str
+    submission_date: datetime
+
+
 class CompetitionSource(Protocol):
     def list_competitions(self, max_competitions: int | None = None) -> list[Competition]: ...
 

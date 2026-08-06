@@ -6,7 +6,8 @@
 
 - Kaggle CSV 的官方 `Rank`
 - `Top% = Rank ÷ 该榜单正排名队伍数 × 100`
-- Kaggle 原样分数字符串（不跨比赛比较）
+- Kaggle 原样分数字符串，并明确标注 Public / Private Rank 与 Score
+- 比赛结束后，授权账户中与官方 Public Score 唯一匹配的 Private Score
 - Public / Private leaderboard 类型与比赛状态
 - 在 Kaggle 标记 `awards_points=true` 时估算的奖牌候选区
 - 授权账户在比赛截止后完成的 Public / Private late submission 分数
@@ -95,7 +96,7 @@ hugo --gc --minify
 ["token-from-account-a", "token-from-account-b"]
 ```
 
-Repository Secret 只能由有权限的仓库维护者写入，普通用户不能通过 PR 或 Issue 安全地自行添加。参与者应通过仓库团队认可的私密渠道把 token 交给维护者，由维护者整体更新 `KAGGLE_API_TOKENS`；绝不能把 token 粘贴到 Issue、PR、Discussion、日志或页面表单中。添加 token 前，应取得账户所有者同意：该账户可见、且 team name 命中 `KAGGLE_TEAMS` 的赛后比赛名称、团队名、提交时间和 Public / Private score 会发布到公开页面。
+Repository Secret 只能由有权限的仓库维护者写入，普通用户不能通过 PR 或 Issue 安全地自行添加。参与者应通过仓库团队认可的私密渠道把 token 交给维护者，由维护者整体更新 `KAGGLE_API_TOKENS`；绝不能把 token 粘贴到 Issue、PR、Discussion、日志或页面表单中。添加 token 前，应取得账户所有者同意：比赛结束后，该账户可见且 team name 命中 `KAGGLE_TEAMS` 的比赛名称、团队名、提交时间和 Public / Private score 会发布到公开页面。
 
 然后在 Settings → Pages 中把 Source 设为 **GitHub Actions**。
 
@@ -123,11 +124,13 @@ Kaggle 对部分比赛可能返回 403、404、429 或不完整响应；例如�
 
 百分比位次使用同一 CSV 中 `Rank > 0` 的行数作分母，而不是可能不同步的 competition 元数据 `teamCount`。页面仍保留两个计数用于测试和审计。
 
-### 赛后提交
+### 授权 Private Score 与赛后提交
 
-Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提交，不能凭一个账户查看任意其他用户的 late submission。因此，多账户覆盖必须由每位参与者自愿提供自己的 token。
+Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提交，不能凭一个账户查看任意其他用户的 submission。因此，多账户覆盖必须由每位参与者自愿提供自己的 token。
 
-程序对每个授权账户枚举其 `entered` 比赛，并只发布同时满足以下条件的记录：
+程序对每个授权账户枚举其 `entered` 比赛。比赛结束后，如果一个截止前提交的 Public Score 能唯一匹配该团队当前官方 Public Leaderboard Score，页面会显示这个提交对应的 Private Score。若存在多个相同 Public Score 但 Private Score 不同的提交，程序会保持空白，避免猜测。正式 Private Leaderboard 发布前不会推断 Private Rank；Kaggle 下载接口切换到 Private Leaderboard 后，官方 Rank、Top% 和 Score 会自动全部使用 Private 数据。
+
+截止后的 late submission 只发布同时满足以下条件的记录：
 
 - 比赛已经超过 Kaggle 返回的 deadline
 - submission 状态为 `COMPLETE`
@@ -153,7 +156,7 @@ Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提�
 
 - `.env`、Kaggle 凭据文件、生成 JSON、`public/` 和浏览器 QA 产物均已加入 `.gitignore`。
 - Python 输出结构使用字段白名单，不包含 `TeamMemberUserNames`、用户名列表、原始响应或认证信息。
-- 赛后提交输出不包含提交人、文件名、描述、submission id、下载地址或 token。
+- 授权提交输出不包含提交人、文件名、描述、submission id、下载地址或 token。
 - GitHub Actions 在解析 Secret 后对每个 token 调用日志遮罩；构建后泄漏检查也逐个搜索每个真实 token 值。
 - 活动比赛若意外返回 private leaderboard，构建会拒绝发布该比赛。
 - 构建后会扫描允许的文本产物，拒绝 token 值、凭据变量名、原始成员字段、`.env`、CSV、ZIP、日志、未知文件类型和符号链接。

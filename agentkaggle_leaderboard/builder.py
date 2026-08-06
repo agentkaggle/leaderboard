@@ -16,6 +16,7 @@ from .kaggle_source import (
 )
 from .medals import medal_candidate
 from .models import (
+    AuthenticatedSubmissionScoreEntry,
     Competition,
     CompetitionSource,
     LateSubmissionEntry,
@@ -129,6 +130,8 @@ def _public_competition(
                 "rank": entry.rank,
                 "top_percent": top_percent,
                 "score": entry.score,
+                "authenticated_private_score": "",
+                "authenticated_private_submission_date": "",
                 "submission_date": entry.submission_date,
                 "medal_candidate": (
                     medal_candidate(entry.rank, snapshot.team_count)
@@ -220,6 +223,64 @@ def _public_late_submissions(
     ]
 
 
+def _scores_match(left: object, right: object) -> bool:
+    left_numeric = _numeric_value(left)
+    right_numeric = _numeric_value(right)
+    if left_numeric is not None and right_numeric is not None:
+        return left_numeric == right_numeric
+    return str(left or "").strip() == str(right or "").strip()
+
+
+def _merge_authenticated_private_scores(
+    competitions: list[dict[str, object]],
+    authenticated_scores: tuple[AuthenticatedSubmissionScoreEntry, ...],
+) -> int:
+    scores_by_team: dict[
+        tuple[str, str], list[AuthenticatedSubmissionScoreEntry]
+    ] = {}
+    for score in authenticated_scores:
+        key = (
+            score.competition_slug,
+            normalize_team_name(score.configured_team_name),
+        )
+        scores_by_team.setdefault(key, []).append(score)
+
+    matched_count = 0
+    for competition in competitions:
+        if (
+            competition["leaderboard_kind"] != "public"
+            or competition["state"] != "ended"
+        ):
+            continue
+        slug = str(competition["slug"])
+        entries = competition["entries"]
+        if not isinstance(entries, list):
+            raise TypeError("Competition entries must be a list")
+        for entry in entries:
+            candidates = [
+                candidate
+                for candidate in scores_by_team.get(
+                    (slug, normalize_team_name(str(entry["team_name"]))),
+                    [],
+                )
+                if _scores_match(candidate.public_score, entry["score"])
+            ]
+            private_scores = {
+                candidate.private_score.strip()
+                for candidate in candidates
+                if candidate.private_score.strip()
+            }
+            if len(private_scores) != 1:
+                continue
+            newest = max(candidates, key=lambda candidate: candidate.submission_date)
+            entry["authenticated_private_score"] = private_scores.pop()
+            entry["authenticated_private_submission_date"] = _iso_utc(
+                newest.submission_date
+            )
+            matched_count += 1
+    return matched_count
+
+
 def _merge_late_results_into_competitions(
     competitions: list[dict[str, object]],
     late_submissions: list[dict[str, object]],
@@ -268,6 +329,8 @@ def _merge_late_results_into_competitions(
                 "rank": None,
                 "top_percent": None,
                 "score": "",
+                "authenticated_private_score": "",
+                "authenticated_private_submission_date": "",
                 "submission_date": "",
                 "medal_candidate": "unavailable",
                 "late_public_score": "",
@@ -456,6 +519,9 @@ def build_leaderboard(
     generated_at: datetime | None = None,
     progress: ProgressCallback | None = None,
     late_submissions: tuple[LateSubmissionEntry, ...] = (),
+    authenticated_submission_scores: tuple[
+        AuthenticatedSubmissionScoreEntry, ...
+    ] = (),
     late_submission_account_count: int = 0,
     late_submission_failure_kinds: tuple[str, ...] = (),
 ) -> dict[str, object]:
@@ -520,6 +586,10 @@ def build_leaderboard(
         public_late_submissions,
         snapshots,
     )
+    authenticated_private_score_count = _merge_authenticated_private_scores(
+        public_competitions,
+        authenticated_submission_scores,
+    )
     public_competitions.sort(
         key=lambda item: (
             item["state"] != "active",
@@ -558,7 +628,7 @@ def build_leaderboard(
     )
 
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "generated_at": _iso_utc(generated_at),
         "status": status,
         "summary": {
@@ -572,6 +642,7 @@ def build_leaderboard(
             "failed_late_submission_account_count": len(late_submission_failure_kinds),
             "late_submission_competition_count": late_competition_count,
             "late_submission_count": len(public_late_submissions),
+            "authenticated_private_score_count": authenticated_private_score_count,
             "late_submission_error_counts": late_error_counts,
             "truncated": truncated,
             "error_counts": error_counts,
@@ -589,6 +660,12 @@ def build_leaderboard(
                 "then multiplied by 100."
             ),
             "score": "Score is preserved as text exactly as provided by Kaggle.",
+            "authenticated_private_score": (
+                "After a competition ends, an authenticated pre-deadline submission's private "
+                "score is shown only when its public score uniquely matches the team's current "
+                "official public leaderboard score. No private rank is inferred from a public "
+                "leaderboard."
+            ),
             "late_submission": (
                 "The best completed post-deadline result per team and competition, returned by "
                 "the authenticated account's My Submissions API. Score direction is inferred "

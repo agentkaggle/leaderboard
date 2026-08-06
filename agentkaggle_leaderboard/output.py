@@ -31,6 +31,7 @@ PUBLIC_KEYS = {
         "failed_late_submission_account_count",
         "late_submission_competition_count",
         "late_submission_count",
+        "authenticated_private_score_count",
         "late_submission_error_counts",
         "truncated",
         "error_counts",
@@ -64,6 +65,8 @@ PUBLIC_KEYS = {
         "rank",
         "top_percent",
         "score",
+        "authenticated_private_score",
+        "authenticated_private_submission_date",
         "submission_date",
         "medal_candidate",
         "late_public_score",
@@ -83,7 +86,14 @@ PUBLIC_KEYS = {
         "private_score",
         "submission_date",
     },
-    "methodology": {"rank", "top_percent", "score", "late_submission", "medal_candidate"},
+    "methodology": {
+        "rank",
+        "top_percent",
+        "score",
+        "authenticated_private_score",
+        "late_submission",
+        "medal_candidate",
+    },
 }
 PUBLIC_ERROR_KINDS = {
     "access_denied",

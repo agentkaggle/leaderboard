@@ -81,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
                 last_reported = completed
 
         late_submissions = []
+        authenticated_submission_scores = []
         discovered_team_names: list[str] = []
         entered_competition_access = []
         late_failure_kinds: list[str] = []
@@ -105,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
                         discover_teams=credential in discovery_tokens,
                     )
                     late_submissions.extend(scan.entries)
+                    authenticated_submission_scores.extend(scan.authenticated_scores)
                     discovered_team_names.extend(scan.discovered_team_names)
                     entered_competition_access.extend(
                         (competition, api)
@@ -139,6 +141,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             for entry in late_submissions
         ]
+        authenticated_submission_scores = [
+            replace(
+                entry,
+                configured_team_name=canonical_teams[
+                    normalize_team_name(entry.configured_team_name)
+                ],
+            )
+            for entry in authenticated_submission_scores
+        ]
         if settings.auto_discover_teams:
             LOGGER.info(
                 "Tracking %d teams (%d configured, %d auto-discovered)",
@@ -157,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
             max_competitions=args.max_competitions,
             progress=report_progress,
             late_submissions=tuple(late_submissions),
+            authenticated_submission_scores=tuple(authenticated_submission_scores),
             late_submission_account_count=(
                 0 if args.skip_late_submissions else len(settings.api_tokens)
             ),
