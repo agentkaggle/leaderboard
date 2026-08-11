@@ -159,7 +159,7 @@ class BuilderTests(unittest.TestCase):
             late_submission_failure_kinds=("access_denied",),
         )
 
-        self.assertEqual(payload["schema_version"], 6)
+        self.assertEqual(payload["schema_version"], 7)
         self.assertEqual(payload["summary"]["late_submission_account_count"], 2)
         self.assertEqual(payload["summary"]["failed_late_submission_account_count"], 1)
         self.assertEqual(payload["summary"]["late_submission_competition_count"], 1)
@@ -381,6 +381,16 @@ class BuilderTests(unittest.TestCase):
             competition_entry["late_submission_date"],
             "2026-07-01T00:00:00Z",
         )
+        completed = payload["visualizations"]["completed"]
+        self.assertEqual(completed["competition_count"], 1)
+        self.assertEqual(completed["result_count"], 1)
+        visual_result = completed["competitions"][0]["results"][0]
+        self.assertEqual(visual_result["result_kind"], "late_estimate")
+        self.assertFalse(visual_result["is_official"])
+        self.assertEqual(visual_result["rank"], 2)
+        self.assertEqual(visual_result["top_percent"], 2.0)
+        self.assertEqual(visual_result["quantile"], 98.0)
+        self.assertEqual(visual_result["score"], "0.10")
         self.assertEqual(payload["teams"][0]["competition_count"], 1)
         self.assertEqual(
             payload["teams"][0]["last_submission_date"],
@@ -513,6 +523,75 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(payload["teams"][0]["competition_count"], 1)
         self.assertEqual(payload["late_teams"][0]["competition_count"], 0)
         self.assertEqual(payload["ongoing_teams"][0]["competition_count"], 1)
+        validate_public_payload(payload)
+
+    def test_visualizations_split_states_and_keep_every_team_result(self) -> None:
+        class VisualizationSource:
+            competitions = [
+                Competition(
+                    slug="active-visual",
+                    title="Active visual",
+                    url="https://www.kaggle.com/competitions/active-visual",
+                    category="Featured",
+                    reward="",
+                    deadline=datetime(2026, 8, 1, tzinfo=timezone.utc),
+                    api_team_count=100,
+                ),
+                Competition(
+                    slug="ended-visual",
+                    title="Ended visual",
+                    url="https://www.kaggle.com/competitions/ended-visual",
+                    category="Featured",
+                    reward="",
+                    deadline=datetime(2026, 6, 1, tzinfo=timezone.utc),
+                    api_team_count=200,
+                ),
+            ]
+
+            def list_competitions(self, max_competitions=None):
+                return self.competitions[:max_competitions]
+
+            def get_leaderboard(self, competition, normalized_teams):
+                if competition.slug == "active-visual":
+                    return LeaderboardSnapshot(
+                        team_count=100,
+                        kind="public",
+                        matches=(
+                            LeaderboardEntry("Alpha", 5, "0.95", "2026-07-01T00:00:00Z"),
+                            LeaderboardEntry("Beta", 20, "0.80", "2026-07-01T00:00:00Z"),
+                        ),
+                    )
+                return LeaderboardSnapshot(
+                    team_count=200,
+                    kind="private",
+                    matches=(
+                        LeaderboardEntry("Alpha", 8, "0.91", "2026-06-01T00:00:00Z"),
+                        LeaderboardEntry("Beta", 40, "0.75", "2026-06-01T00:00:00Z"),
+                    ),
+                )
+
+        payload = build_leaderboard(
+            VisualizationSource(),
+            Settings(("Alpha", "Beta"), workers=1),
+            generated_at=datetime(2026, 7, 17, tzinfo=timezone.utc),
+        )
+
+        ongoing = payload["visualizations"]["ongoing"]
+        completed = payload["visualizations"]["completed"]
+        self.assertEqual((ongoing["competition_count"], ongoing["result_count"]), (1, 2))
+        self.assertEqual((completed["competition_count"], completed["result_count"]), (1, 2))
+        self.assertEqual(
+            [result["team_name"] for result in ongoing["competitions"][0]["results"]],
+            ["Alpha", "Beta"],
+        )
+        self.assertEqual(ongoing["competitions"][0]["best_quantile"], 95.0)
+        self.assertEqual(completed["competitions"][0]["best_quantile"], 96.0)
+        self.assertTrue(
+            all(
+                result["result_kind"] == "official_final"
+                for result in completed["competitions"][0]["results"]
+            )
+        )
         validate_public_payload(payload)
 
     def test_public_schema_rejects_unapproved_error_categories(self) -> None:

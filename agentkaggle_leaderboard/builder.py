@@ -25,6 +25,7 @@ from .models import (
     ScanFailure,
 )
 from .settings import Settings, normalize_team_name
+from .visualizations import build_visualizations
 
 
 ProgressCallback = Callable[[int, int], None]
@@ -628,7 +629,7 @@ def build_leaderboard(
     )
 
     return {
-        "schema_version": 6,
+        "schema_version": 7,
         "generated_at": _iso_utc(generated_at),
         "status": status,
         "summary": {
@@ -652,6 +653,7 @@ def build_leaderboard(
         "ongoing_teams": ongoing_teams,
         "competitions": public_competitions,
         "late_submissions": public_late_submissions,
+        "visualizations": build_visualizations(public_competitions),
         "methodology": {
             "rank": "Official Rank from Kaggle's complete leaderboard CSV.",
             "top_percent": (

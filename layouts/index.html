@@ -23,9 +23,15 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>Kaggle Team Radar</span>
       </a>
-      {{ with $data }}
-        <p class="freshness">数据快照 <time class="local-time" datetime="{{ .generated_at }}">{{ .generated_at }}</time></p>
-      {{ end }}
+      <div class="header-actions">
+        <nav class="site-nav" aria-label="主导航">
+          <a href="{{ site.Home.RelPermalink }}" aria-current="page">榜单</a>
+          <a href="{{ "visualizations/" | relURL }}">可视化</a>
+        </nav>
+        {{ with $data }}
+          <p class="freshness">数据快照 <time class="local-time" datetime="{{ .generated_at }}">{{ .generated_at }}</time></p>
+        {{ end }}
+      </div>
     </div>
   </header>
 

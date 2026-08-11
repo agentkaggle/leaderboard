@@ -18,6 +18,7 @@ PUBLIC_KEYS = {
         "ongoing_teams",
         "competitions",
         "late_submissions",
+        "visualizations",
         "methodology",
     },
     "summary": {
@@ -86,6 +87,32 @@ PUBLIC_KEYS = {
         "private_score",
         "submission_date",
     },
+    "visualizations": {"ongoing", "completed"},
+    "visualization_group": {
+        "competition_count",
+        "result_count",
+        "competitions",
+    },
+    "visualization_competition": {
+        "slug",
+        "title",
+        "url",
+        "leaderboard_kind",
+        "result_count",
+        "best_quantile",
+        "results",
+    },
+    "visualization_result": {
+        "team_name",
+        "rank",
+        "leaderboard_team_count",
+        "top_percent",
+        "quantile",
+        "score",
+        "result_kind",
+        "is_official",
+        "provenance",
+    },
     "methodology": {
         "rank",
         "top_percent",
@@ -150,6 +177,32 @@ def validate_public_payload(payload: dict[str, Any]) -> None:
             PUBLIC_KEYS["late_submission"],
             f"late_submissions[{index}]",
         )
+    _require_exact_keys(
+        payload["visualizations"],
+        PUBLIC_KEYS["visualizations"],
+        "visualizations",
+    )
+    for group_name, group in payload["visualizations"].items():
+        _require_exact_keys(
+            group,
+            PUBLIC_KEYS["visualization_group"],
+            f"visualizations.{group_name}",
+        )
+        for competition_index, competition in enumerate(group["competitions"]):
+            location = f"visualizations.{group_name}.competitions[{competition_index}]"
+            _require_exact_keys(
+                competition,
+                PUBLIC_KEYS["visualization_competition"],
+                location,
+            )
+            for result_index, result in enumerate(competition["results"]):
+                _require_exact_keys(
+                    result,
+                    PUBLIC_KEYS["visualization_result"],
+                    f"{location}.results[{result_index}]",
+                )
+                if not 0 <= float(result["quantile"]) <= 100:
+                    raise ValueError("Public payload has an invalid visualization quantile")
 
 
 def write_json_atomic(payload: dict[str, Any], output_path: Path) -> None:

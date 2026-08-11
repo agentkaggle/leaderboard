@@ -2,7 +2,9 @@
 
 线上榜单：[https://agentkaggle.github.io/leaderboard/](https://agentkaggle.github.io/leaderboard/)
 
-从环境变量读取一组 Kaggle team name，扫描 Kaggle 的公开比赛目录，匹配完整 leaderboard，并使用授权账户的 My Submissions 补充赛后提交分数，生成一个可部署到 GitHub Pages 的聚合榜单。
+从环境变量读取 Kaggle team name 和授权 token，扫描 Kaggle 的公开比赛目录及各账户参与的比赛，匹配完整 leaderboard，并使用 My Submissions 补充团队名、参赛记录与赛后提交分数，生成一个可部署到 GitHub Pages 的聚合榜单。
+
+成绩分布子页面：[https://agentkaggle.github.io/leaderboard/visualizations/](https://agentkaggle.github.io/leaderboard/visualizations/)
 
 页面只保留至少命中一个目标团队的比赛，展示：
 
@@ -13,6 +15,7 @@
 - Public / Private leaderboard 类型与比赛状态
 - 在 Kaggle 标记 `awards_points=true` 时估算的奖牌候选区
 - 授权账户在比赛截止后完成的 Public / Private late submission 分数
+- 进行中与已完成比赛各自的“每场最佳分位”和“全部账号成绩”图表
 - 扫描覆盖、失败数和截断状态，避免把部分结果伪装成完整结果
 
 ## 为什么选择 Hugo
@@ -53,6 +56,8 @@ chmod 600 .env
 KAGGLE_TEAMS=["Exact Kaggle Team A", "Exact Kaggle Team B"]
 KAGGLE_API_TOKEN=your-token
 KAGGLE_API_TOKENS=[]
+KAGGLE_LEGACY_CREDENTIALS=[]
+KAGGLE_AUTO_DISCOVER_TEAMS=true
 KAGGLE_SCAN_WORKERS=2
 KAGGLE_REQUEST_INTERVAL_SECONDS=2
 ```
@@ -66,7 +71,7 @@ KAGGLE_API_TOKEN=primary-account-token
 KAGGLE_API_TOKENS=["second-account-token", "third-account-token"]
 ```
 
-第一个 token 用于公开 leaderboard 扫描；所有 token 都会依次扫描各自可见的 My Submissions。`--skip-late-submissions` 可用于只验证公开 leaderboard 链路。
+第一个 token 用于公开 leaderboard 扫描；所有 token 都会依次扫描各自可见的 My Submissions 和 entered 比赛。`KAGGLE_AUTO_DISCOVER_TEAMS=true` 时，程序从每个授权账户的完整提交记录自动发现其实际 team name，因此 `KAGGLE_TEAMS` 可以只保留需要额外追踪、但没有提供 token 的团队，也可以留空。`--skip-late-submissions` 可用于只验证公开 leaderboard 链路。
 
 先用少量比赛验证凭据和页面：
 
@@ -86,11 +91,12 @@ hugo --gc --minify
 
 ## GitHub Pages 自动刷新
 
-在公开仓库的 Settings → Secrets and variables → Actions 中添加 `KAGGLE_TEAMS`，并配置至少一种 token Secret：
+在公开仓库的 Settings → Secrets and variables → Actions 中配置至少一种 token Secret：
 
-- `KAGGLE_TEAMS`
+- `KAGGLE_TEAMS`：可选，补充没有授权 token 的 team name
 - `KAGGLE_API_TOKEN`：兼容单账户，也可作为主账户
 - `KAGGLE_API_TOKENS`：可选，多账户 token 的 JSON 字符串数组
+- `KAGGLE_LEGACY_CREDENTIALS`：可选，旧 username/key 凭据对象数组
 
 例如 `KAGGLE_API_TOKENS` 的 Secret 值为：
 
@@ -98,7 +104,7 @@ hugo --gc --minify
 ["token-from-account-a", "token-from-account-b"]
 ```
 
-Repository Secret 只能由有权限的仓库维护者写入，普通用户不能通过 PR 或 Issue 安全地自行添加。参与者应通过仓库团队认可的私密渠道把 token 交给维护者，由维护者整体更新 `KAGGLE_API_TOKENS`；绝不能把 token 粘贴到 Issue、PR、Discussion、日志或页面表单中。添加 token 前，应取得账户所有者同意：比赛结束后，该账户可见且 team name 命中 `KAGGLE_TEAMS` 的比赛名称、团队名、提交时间和 Public / Private score 会发布到公开页面。
+Repository Secret 只能由有权限的仓库维护者写入，普通用户不能通过 PR 或 Issue 安全地自行添加。参与者应通过仓库团队认可的私密渠道把 token 交给维护者，由维护者整体更新 `KAGGLE_API_TOKENS`；绝不能把 token 粘贴到 Issue、PR、Discussion、日志或页面表单中。添加 token 前，应取得账户所有者同意：该账户的 team name、公开参赛记录，以及比赛结束后的提交时间和 Public / Private score 会发布到公开页面和可视化页面。
 
 然后在 Settings → Pages 中把 Source 设为 **GitHub Actions**。
 
@@ -132,12 +138,25 @@ Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提�
 
 程序对每个授权账户枚举其 `entered` 比赛。比赛结束后，如果一个截止前提交的 Public Score 能唯一匹配该团队当前官方 Public Leaderboard Score，页面会显示这个提交对应的 Private Score。若存在多个相同 Public Score 但 Private Score 不同的提交，程序会保持空白，避免猜测。正式 Private Leaderboard 发布前不会推断 Private Rank；Kaggle 下载接口切换到 Private Leaderboard 后，官方 Rank、Top% 和 Score 会自动全部使用 Private 数据。
 
+启用自动发现时，每个 token 的提交记录还用于识别该账户在不同比赛中实际使用的 team name；这些 entered 比赛会与公开 `general` / `community` 目录合并后去重，再由能够访问它的授权账户读取 leaderboard。没有完成提交的已加入比赛无法可靠确定 team name，因此不会凭账号加入状态推断公开身份。
+
+### 四张成绩分布图
+
+`/visualizations/` 使用同一份清洗后的 `leaderboard.json`，不额外读取 Secrets：
+
+- 进行中每场最佳分位：当前 Public LB 中每场最好的账号成绩。
+- 进行中全部账号成绩：所有匹配账号的当前 Public LB 分布。
+- 已完成每场最佳分位：每场比赛中最好的官方最终结果或可计算 late 估算。
+- 已完成全部账号成绩：所有账号在已完成比赛中的最佳可比较结果。
+
+统一使用 `Quantile = 100 - Top%`，数值越大越好。已完成散点图会展开 Q95–Q100 区间；实心标记是官方排名，空心标记是将 late score 与完整最终榜单比较得到的估算。图和数据表随 Pages 的每日任务一起重新生成。
+
 截止后的 late submission 只发布同时满足以下条件的记录：
 
 - 比赛已经超过 Kaggle 返回的 deadline
 - submission 状态为 `COMPLETE`
 - submission 时间严格晚于 deadline
-- submission 的 team name 命中 `KAGGLE_TEAMS`
+- submission 的 team name 命中配置团队或由授权 token 自动发现的团队
 
 结果使用 SDK 的 page token 读取完整 My Submissions 历史，并按账户容错：单个 token 认证或请求失败时只记录固定错误类别，不暴露账户、token 或原始异常。相同比赛、团队、时间和分数的记录会去重。赛后提交不属于官方 leaderboard，不提供 Rank、Top% 或奖牌结论。
 
@@ -172,6 +191,7 @@ Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提�
 
 ```bash
 uv run python -m unittest discover -v
+node --test tests/*.test.cjs
 mkdir -p data
 cp tests/fixtures/leaderboard.json data/leaderboard.json
 hugo --gc --minify

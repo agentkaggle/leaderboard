@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#071116">
+  <meta name="description" content="按进行中和已完成 Kaggle 比赛展示最佳分位与全部账号成绩分布。">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>{{ .Title }} · {{ site.Title }}</title>
+  <link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml">
+  {{ $css := resources.Get "css/main.css" | minify | fingerprint }}
+  <link rel="stylesheet" href="{{ $css.RelPermalink }}" integrity="{{ $css.Data.Integrity }}">
+  {{ $app := resources.Get "js/app.js" | minify | fingerprint }}
+  <script src="{{ $app.RelPermalink }}" integrity="{{ $app.Data.Integrity }}" defer></script>
+  {{ $charts := resources.Get "js/visualizations.js" | minify | fingerprint }}
+  <script src="{{ $charts.RelPermalink }}" integrity="{{ $charts.Data.Integrity }}" defer></script>
+</head>
+<body>
+  {{ $data := hugo.Data.leaderboard }}
+  <a class="skip-link" href="#main">跳至图表</a>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="{{ site.Home.RelPermalink }}" aria-label="Kaggle Team Radar 首页">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>Kaggle Team Radar</span>
+      </a>
+      <div class="header-actions">
+        <nav class="site-nav" aria-label="主导航">
+          <a href="{{ site.Home.RelPermalink }}">榜单</a>
+          <a href="{{ .RelPermalink }}" aria-current="page">可视化</a>
+        </nav>
+        {{ with $data }}
+          <p class="freshness">数据快照 <time class="local-time" datetime="{{ .generated_at }}">{{ .generated_at }}</time></p>
+        {{ end }}
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="viz-hero">
+      <div class="shell viz-hero-inner">
+        <div>
+          <p class="eyebrow">PERFORMANCE DISTRIBUTION</p>
+          <h1>比赛成绩分布</h1>
+          <p>Quantile 越接近 100，成绩在对应比赛榜单中的相对位置越高。</p>
+        </div>
+        {{ with $data }}
+          <dl class="viz-summary" aria-label="可视化数据概览">
+            <div><dt>账号团队</dt><dd>{{ .summary.tracked_team_count }}</dd></div>
+            <div><dt>进行中</dt><dd>{{ .visualizations.ongoing.competition_count }}</dd></div>
+            <div><dt>已完成</dt><dd>{{ .visualizations.completed.competition_count }}</dd></div>
+            <div><dt>结果记录</dt><dd>{{ add .visualizations.ongoing.result_count .visualizations.completed.result_count }}</dd></div>
+          </dl>
+        {{ end }}
+      </div>
+    </section>
+
+    <div class="shell visualization-page">
+      {{ if not $data }}
+        <section class="empty-panel" aria-labelledby="no-viz-data-title">
+          <p class="eyebrow">NO SNAPSHOT</p>
+          <h2 id="no-viz-data-title">尚未生成可视化数据</h2>
+        </section>
+      {{ else }}
+        {{ if ne $data.status "ready" }}
+          <aside class="notice" role="status">
+            <span class="notice-icon" aria-hidden="true">!</span>
+            <div>
+              <strong>当前是部分扫描快照</strong>
+              <p>成功扫描 {{ $data.summary.scanned_competition_count }} / {{ $data.summary.discovered_competition_count }} 场；图表只展示本次成功获取的结果。</p>
+            </div>
+          </aside>
+        {{ end }}
+
+        <nav class="status-jump" aria-label="比赛状态">
+          <a href="#ongoing">进行中</a>
+          <a href="#completed">已完成</a>
+        </nav>
+
+        {{ range $groupName := slice "ongoing" "completed" }}
+          {{ $group := index $data.visualizations $groupName }}
+          {{ $isOngoing := eq $groupName "ongoing" }}
+          <section id="{{ $groupName }}" class="viz-status-section" aria-labelledby="{{ $groupName }}-title">
+            <header class="viz-section-heading">
+              <div>
+                <p class="eyebrow">{{ if $isOngoing }}LIVE PUBLIC LEADERBOARDS{{ else }}FINAL &amp; LATE RESULTS{{ end }}</p>
+                <h2 id="{{ $groupName }}-title">{{ if $isOngoing }}进行中比赛{{ else }}已完成比赛{{ end }}</h2>
+              </div>
+              <p>{{ $group.competition_count }} 场比赛 · {{ $group.result_count }} 条账号成绩</p>
+            </header>
+
+            {{ if eq $group.competition_count 0 }}
+              <div class="filter-empty">当前没有可计算分位的{{ if $isOngoing }}进行中{{ else }}已完成{{ end }}比赛。</div>
+            {{ else }}
+              <article class="chart-panel" aria-labelledby="{{ $groupName }}-best-title">
+                <header class="chart-heading">
+                  <div>
+                    <span class="chart-index">01</span>
+                    <h3 id="{{ $groupName }}-best-title">每场最佳分位</h3>
+                  </div>
+                  <p>每场比赛仅保留当前最佳账号结果</p>
+                </header>
+                <div
+                  class="chart-mount"
+                  data-chart-type="bar"
+                  data-chart-state="{{ $groupName }}"
+                  data-chart-title="{{ if $isOngoing }}进行中比赛每场最佳分位{{ else }}已完成比赛每场最佳分位{{ end }}"
+                >
+                  <div class="chart-dataset" hidden>
+                    {{ range $group.competitions }}
+                      {{ $competition := . }}
+                      {{ with index .results 0 }}
+                        <span
+                          class="chart-datum"
+                          data-competition="{{ $competition.title }}"
+                          data-team="{{ .team_name }}"
+                          data-rank="{{ .rank }}"
+                          data-team-count="{{ .leaderboard_team_count }}"
+                          data-top-percent="{{ .top_percent }}"
+                          data-quantile="{{ .quantile }}"
+                          data-score="{{ .score }}"
+                          data-result-kind="{{ .result_kind }}"
+                          data-is-official="{{ .is_official }}"
+                          data-provenance="{{ .provenance }}"
+                        ></span>
+                      {{ end }}
+                    {{ end }}
+                  </div>
+                </div>
+                <details class="chart-table-details">
+                  <summary>查看数据表</summary>
+                  <div class="table-wrap">
+                    <table class="chart-data-table">
+                      <thead><tr><th scope="col">比赛</th><th scope="col">账号团队</th><th scope="col">Quantile</th><th scope="col">Top%</th><th scope="col">位次</th><th scope="col">分数</th><th scope="col">来源</th></tr></thead>
+                      <tbody>
+                        {{ range $group.competitions }}
+                          {{ $competition := . }}
+                          {{ with index .results 0 }}
+                            <tr><th scope="row">{{ $competition.title }}</th><td>{{ .team_name }}</td><td>{{ lang.FormatNumberCustom 2 .quantile }}</td><td>{{ lang.FormatNumberCustom 2 .top_percent }}%</td><td>#{{ .rank }} / {{ .leaderboard_team_count }}</td><td><code class="score">{{ .score }}</code></td><td>{{ if .is_official }}官方{{ else }}Late 估算*{{ end }}</td></tr>
+                          {{ end }}
+                        {{ end }}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </article>
+
+              <article class="chart-panel" aria-labelledby="{{ $groupName }}-scatter-title">
+                <header class="chart-heading">
+                  <div>
+                    <span class="chart-index">02</span>
+                    <h3 id="{{ $groupName }}-scatter-title">全部账号成绩</h3>
+                  </div>
+                  <p>{{ if $isOngoing }}线性分位轴{{ else }}Q95–Q100 高位区间展开{{ end }}</p>
+                </header>
+                <div
+                  class="chart-mount"
+                  data-chart-type="scatter"
+                  data-chart-state="{{ $groupName }}"
+                  data-chart-scale="{{ if $isOngoing }}linear{{ else }}lens{{ end }}"
+                  data-chart-title="{{ if $isOngoing }}进行中比赛全部账号成绩{{ else }}已完成比赛全部账号成绩{{ end }}"
+                >
+                  <div class="chart-dataset" hidden>
+                    {{ range $group.competitions }}
+                      {{ $competition := . }}
+                      {{ range .results }}
+                        <span
+                          class="chart-datum"
+                          data-competition="{{ $competition.title }}"
+                          data-team="{{ .team_name }}"
+                          data-rank="{{ .rank }}"
+                          data-team-count="{{ .leaderboard_team_count }}"
+                          data-top-percent="{{ .top_percent }}"
+                          data-quantile="{{ .quantile }}"
+                          data-score="{{ .score }}"
+                          data-result-kind="{{ .result_kind }}"
+                          data-is-official="{{ .is_official }}"
+                          data-provenance="{{ .provenance }}"
+                        ></span>
+                      {{ end }}
+                    {{ end }}
+                  </div>
+                </div>
+                <details class="chart-table-details">
+                  <summary>查看全部 {{ $group.result_count }} 条记录</summary>
+                  <div class="table-wrap">
+                    <table class="chart-data-table">
+                      <thead><tr><th scope="col">比赛</th><th scope="col">账号团队</th><th scope="col">Quantile</th><th scope="col">Top%</th><th scope="col">位次</th><th scope="col">分数</th><th scope="col">来源</th></tr></thead>
+                      <tbody>
+                        {{ range $group.competitions }}
+                          {{ $competition := . }}
+                          {{ range .results }}
+                            <tr><th scope="row">{{ $competition.title }}</th><td>{{ .team_name }}</td><td>{{ lang.FormatNumberCustom 2 .quantile }}</td><td>{{ lang.FormatNumberCustom 2 .top_percent }}%</td><td>#{{ .rank }} / {{ .leaderboard_team_count }}</td><td><code class="score">{{ .score }}</code></td><td>{{ if .is_official }}官方{{ else }}Late 估算*{{ end }}</td></tr>
+                          {{ end }}
+                        {{ end }}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </article>
+            {{ end }}
+          </section>
+        {{ end }}
+
+        <section class="viz-methodology" aria-labelledby="viz-method-title">
+          <div>
+            <p class="eyebrow">SCORE SEMANTICS</p>
+            <h2 id="viz-method-title">统计口径</h2>
+          </div>
+          <div class="method-grid">
+            <article><span>01</span><h3>统一分位</h3><p>Quantile = 100 − Rank ÷ 有效榜单队伍数 × 100；不同原始指标可在同一坐标上比较。</p></article>
+            <article><span>02</span><h3>进行中</h3><p>只使用当前官方 Public Leaderboard，不读取或推断尚未公开的 Private 排名。</p></article>
+            <article><span>03</span><h3>已完成</h3><p>每个账号在官方最终排名与可计算的 late score 估算中保留较优结果；空心标记表示估算。</p></article>
+            <article><span>04</span><h3>自动覆盖</h3><p>公开榜单匹配配置团队；授权 token 补充 entered 比赛、账号团队名、Private Score 与赛后结果。</p></article>
+          </div>
+        </section>
+      {{ end }}
+    </div>
+  </main>
+
+  <footer>
+    <div class="shell footer-inner">
+      <p>Kaggle Team Radar · 自动更新的只读快照</p>
+      <p>* Late 位次为相对最终榜单的分数估算，不是 Kaggle 官方名次</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "generated_at": "2026-07-17T01:00:00Z",
   "status": "partial",
   "summary": {
@@ -108,6 +108,56 @@
       "submission_date": "2026-07-08T13:40:00Z"
     }
   ],
+  "visualizations": {
+    "ongoing": {
+      "competition_count": 1,
+      "result_count": 2,
+      "competitions": [
+        {
+          "slug": "synthetic-vision-challenge",
+          "title": "Synthetic Vision Challenge 2026",
+          "url": "https://www.kaggle.com/competitions/synthetic-vision-challenge",
+          "leaderboard_kind": "public",
+          "result_count": 2,
+          "best_quantile": 99.4462,
+          "results": [
+            {"team_name": "Neural Nomads", "rank": 7, "leaderboard_team_count": 1264, "top_percent": 0.5538, "quantile": 99.4462, "score": "0.982731", "result_kind": "official_current", "is_official": true, "provenance": "Official current Public LB"},
+            {"team_name": "Gradient Guild", "rank": 54, "leaderboard_team_count": 1264, "top_percent": 4.2722, "quantile": 95.7278, "score": "0.971084", "result_kind": "official_current", "is_official": true, "provenance": "Official current Public LB"}
+          ]
+        }
+      ]
+    },
+    "completed": {
+      "competition_count": 2,
+      "result_count": 4,
+      "competitions": [
+        {
+          "slug": "tabular-signal-cup",
+          "title": "Tabular Signal Cup",
+          "url": "https://www.kaggle.com/competitions/tabular-signal-cup",
+          "leaderboard_kind": "private",
+          "result_count": 3,
+          "best_quantile": 98.8,
+          "results": [
+            {"team_name": "Gradient Guild", "rank": 12, "leaderboard_team_count": 1000, "top_percent": 1.2, "quantile": 98.8, "score": "0.11421", "result_kind": "late_estimate", "is_official": false, "provenance": "Late score estimate"},
+            {"team_name": "Neural Nomads", "rank": 15, "leaderboard_team_count": 1000, "top_percent": 1.5, "quantile": 98.5, "score": "0.11502", "result_kind": "late_estimate", "is_official": false, "provenance": "Late score estimate"},
+            {"team_name": "Bayes & Beyond", "rank": 63, "leaderboard_team_count": 1000, "top_percent": 6.3, "quantile": 93.7, "score": "0.11840777", "result_kind": "official_final", "is_official": true, "provenance": "Official final leaderboard"}
+          ]
+        },
+        {
+          "slug": "audio-wildlife-mini",
+          "title": "Audio Wildlife Mini",
+          "url": "https://www.kaggle.com/competitions/audio-wildlife-mini",
+          "leaderboard_kind": "public",
+          "result_count": 1,
+          "best_quantile": 97.29,
+          "results": [
+            {"team_name": "Neural Nomads", "rank": 10, "leaderboard_team_count": 369, "top_percent": 2.71, "quantile": 97.29, "score": "0.83420", "result_kind": "official_public", "is_official": true, "provenance": "Official Public LB at snapshot"}
+          ]
+        }
+      ]
+    }
+  },
   "methodology": {
     "rank": "Official Rank from Kaggle's complete leaderboard CSV.",
     "top_percent": "Best official rank per competition divided by the deduplicated team count, multiplied by 100.",

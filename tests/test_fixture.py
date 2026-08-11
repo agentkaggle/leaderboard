@@ -7,6 +7,7 @@ from statistics import fmean
 
 from agentkaggle_leaderboard.medals import medal_candidate
 from agentkaggle_leaderboard.output import validate_public_payload
+from agentkaggle_leaderboard.visualizations import build_visualizations
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "leaderboard.json"
@@ -38,6 +39,7 @@ class FixtureConsistencyTests(unittest.TestCase):
             len({entry["competition_slug"] for entry in late_submissions}),
         )
         self.assertTrue(all(competition["entries"] for competition in competitions))
+        self.assertEqual(payload["visualizations"], build_visualizations(competitions))
 
         for competition in competitions:
             team_count = competition["leaderboard_team_count"]
