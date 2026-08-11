@@ -629,7 +629,7 @@ def build_leaderboard(
     )
 
     return {
-        "schema_version": 7,
+        "schema_version": 8,
         "generated_at": _iso_utc(generated_at),
         "status": status,
         "summary": {

@@ -54,6 +54,7 @@ chmod 600 .env
 
 ```dotenv
 KAGGLE_TEAMS=["Exact Kaggle Team A", "Exact Kaggle Team B"]
+KAGGLE_TEAM_ALIASES={"Competition-specific TeamName":"Exact Kaggle Team A"}
 KAGGLE_API_TOKEN=your-token
 KAGGLE_API_TOKENS=[]
 KAGGLE_LEGACY_CREDENTIALS=[]
@@ -63,6 +64,8 @@ KAGGLE_REQUEST_INTERVAL_SECONDS=2
 ```
 
 `KAGGLE_TEAMS` 推荐写成 JSON 数组，这样 team name 中可以安全包含逗号。匹配会去除首尾空白，并做 Unicode NFKC 和大小写归一化；输出仍使用配置中的名称。
+
+同一账号在不同比赛使用不同 TeamName 时，用 `KAGGLE_TEAM_ALIASES` 的 JSON 对象把榜单原名映射到统一账号名。别名参与严格匹配，但页面只显示 canonical 名称，避免把一个账号拆成两行。例如 `{"Justin Kimlim":"kimlim"}` 会把 Kaggriculture 的 TeamName 归入 `kimlim`。
 
 单账户只需设置 `KAGGLE_API_TOKEN`。多账户把 token 放入一个 JSON 数组；两种变量可以同时使用，程序会保持顺序并去重：
 
@@ -94,6 +97,7 @@ hugo --gc --minify
 在公开仓库的 Settings → Secrets and variables → Actions 中配置至少一种 token Secret：
 
 - `KAGGLE_TEAMS`：可选，补充没有授权 token 的 team name
+- `KAGGLE_TEAM_ALIASES`：可选，比赛特定 TeamName 到统一账号名的 JSON 对象；当前公开别名直接配置在 workflow 中
 - `KAGGLE_API_TOKEN`：兼容单账户，也可作为主账户
 - `KAGGLE_API_TOKENS`：可选，多账户 token 的 JSON 字符串数组
 - `KAGGLE_LEGACY_CREDENTIALS`：可选，旧 username/key 凭据对象数组
@@ -149,7 +153,7 @@ Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提�
 - 已完成每场最佳分位：每场比赛中最好的官方最终结果或可计算 late 估算。
 - 已完成全部账号成绩：所有账号在已完成比赛中的最佳可比较结果。
 
-统一使用 `Quantile = 100 - Top%`，数值越大越好。已完成散点图会展开 Q95–Q100 区间；实心标记是官方排名，空心标记是将 late score 与完整最终榜单比较得到的估算。图和数据表随 Pages 的每日任务一起重新生成。
+统一使用 `Quantile = 100 - Top%`，数值越大越好。已完成散点图会展开 Q95–Q100 区间；实心标记是官方排名，空心标记是将 late score 与完整最终榜单比较得到的估算。官方 Private Leaderboard 已发布时固定优先使用 Private Rank 与 Score；只有 Public Rank 时仍保留该官方位次，但分数优先显示唯一匹配的认证 Private Score，并分别标明来源。每个账号使用唯一颜色和点内缩写，鼠标悬停或键盘聚焦可查看完整详情。图和数据表随 Pages 的每日任务一起重新生成。
 
 截止后的 late submission 只发布同时满足以下条件的记录：
 

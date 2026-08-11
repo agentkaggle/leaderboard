@@ -159,7 +159,7 @@ class BuilderTests(unittest.TestCase):
             late_submission_failure_kinds=("access_denied",),
         )
 
-        self.assertEqual(payload["schema_version"], 7)
+        self.assertEqual(payload["schema_version"], 8)
         self.assertEqual(payload["summary"]["late_submission_account_count"], 2)
         self.assertEqual(payload["summary"]["failed_late_submission_account_count"], 1)
         self.assertEqual(payload["summary"]["late_submission_competition_count"], 1)
@@ -248,6 +248,14 @@ class BuilderTests(unittest.TestCase):
             "2026-05-31T00:00:00Z",
         )
         self.assertEqual(payload["summary"]["authenticated_private_score_count"], 1)
+        visual_result = payload["visualizations"]["completed"]["competitions"][0][
+            "results"
+        ][0]
+        self.assertEqual(visual_result["rank"], 25)
+        self.assertEqual(visual_result["score"], "9.595")
+        self.assertEqual(visual_result["rank_kind"], "official_public")
+        self.assertEqual(visual_result["score_kind"], "authenticated_private")
+        self.assertEqual(visual_result["result_kind"], "official_public")
         validate_public_payload(payload)
 
         active_payload = build_leaderboard(
@@ -385,12 +393,14 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(completed["competition_count"], 1)
         self.assertEqual(completed["result_count"], 1)
         visual_result = completed["competitions"][0]["results"][0]
-        self.assertEqual(visual_result["result_kind"], "late_estimate")
-        self.assertFalse(visual_result["is_official"])
-        self.assertEqual(visual_result["rank"], 2)
-        self.assertEqual(visual_result["top_percent"], 2.0)
-        self.assertEqual(visual_result["quantile"], 98.0)
-        self.assertEqual(visual_result["score"], "0.10")
+        self.assertEqual(visual_result["result_kind"], "official_final")
+        self.assertTrue(visual_result["is_official"])
+        self.assertEqual(visual_result["rank_kind"], "official_private")
+        self.assertEqual(visual_result["score_kind"], "official_private")
+        self.assertEqual(visual_result["rank"], 10)
+        self.assertEqual(visual_result["top_percent"], 10.0)
+        self.assertEqual(visual_result["quantile"], 90.0)
+        self.assertEqual(visual_result["score"], "0.20")
         self.assertEqual(payload["teams"][0]["competition_count"], 1)
         self.assertEqual(
             payload["teams"][0]["last_submission_date"],
@@ -589,6 +599,13 @@ class BuilderTests(unittest.TestCase):
         self.assertTrue(
             all(
                 result["result_kind"] == "official_final"
+                for result in completed["competitions"][0]["results"]
+            )
+        )
+        self.assertTrue(
+            all(
+                result["rank_kind"] == "official_private"
+                and result["score_kind"] == "official_private"
                 for result in completed["competitions"][0]["results"]
             )
         )

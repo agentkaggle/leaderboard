@@ -21,15 +21,28 @@ def _official_result(
 
     state = str(competition["state"])
     leaderboard_kind = str(competition["leaderboard_kind"])
+    score = str(entry["score"])
     if state == "active":
         result_kind = "official_current"
-        provenance = "Official current Public LB"
+        rank_kind = "official_public"
+        score_kind = "official_public"
+        provenance = "Official current Public rank and score"
     elif leaderboard_kind == "private":
         result_kind = "official_final"
-        provenance = "Official final leaderboard"
+        rank_kind = "official_private"
+        score_kind = "official_private"
+        provenance = "Official final Private rank and score"
     else:
         result_kind = "official_public"
-        provenance = "Official Public LB at snapshot"
+        rank_kind = "official_public"
+        authenticated_private_score = str(entry["authenticated_private_score"] or "")
+        if authenticated_private_score:
+            score = authenticated_private_score
+            score_kind = "authenticated_private"
+            provenance = "Official Public rank with authenticated Private score"
+        else:
+            score_kind = "official_public"
+            provenance = "Official Public rank and score at snapshot"
 
     numeric_top_percent = float(top_percent)
     return {
@@ -38,8 +51,10 @@ def _official_result(
         "leaderboard_team_count": int(competition["leaderboard_team_count"]),
         "top_percent": numeric_top_percent,
         "quantile": _quantile(numeric_top_percent),
-        "score": str(entry["score"]),
+        "score": score,
         "result_kind": result_kind,
+        "rank_kind": rank_kind,
+        "score_kind": score_kind,
         "is_official": True,
         "provenance": provenance,
     }
@@ -52,6 +67,12 @@ def _late_result(entry: dict[str, Any]) -> dict[str, object] | None:
     if rank is None or top_percent is None or team_count is None:
         return None
 
+    private_score = str(entry["late_private_score"] or "")
+    public_score = str(entry["late_public_score"] or "")
+    score = private_score or public_score
+    if not score:
+        return None
+
     numeric_top_percent = float(top_percent)
     return {
         "team_name": str(entry["team_name"]),
@@ -59,10 +80,16 @@ def _late_result(entry: dict[str, Any]) -> dict[str, object] | None:
         "leaderboard_team_count": int(team_count),
         "top_percent": numeric_top_percent,
         "quantile": _quantile(numeric_top_percent),
-        "score": str(entry["late_private_score"] or entry["late_public_score"]),
+        "score": score,
         "result_kind": "late_estimate",
+        "rank_kind": "late_estimate",
+        "score_kind": "late_private" if private_score else "late_public",
         "is_official": False,
-        "provenance": "Late score estimate",
+        "provenance": (
+            "Late Private score rank estimate"
+            if private_score
+            else "Late Public score rank estimate"
+        ),
     }
 
 
@@ -72,6 +99,8 @@ def _selected_result(
 ) -> dict[str, object] | None:
     official = _official_result(competition, entry)
     if competition["state"] != "ended":
+        return official
+    if competition["leaderboard_kind"] == "private" and official is not None:
         return official
 
     candidates = [candidate for candidate in (official, _late_result(entry)) if candidate]

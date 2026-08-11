@@ -110,6 +110,8 @@ PUBLIC_KEYS = {
         "quantile",
         "score",
         "result_kind",
+        "rank_kind",
+        "score_kind",
         "is_official",
         "provenance",
     },
@@ -203,6 +205,20 @@ def validate_public_payload(payload: dict[str, Any]) -> None:
                 )
                 if not 0 <= float(result["quantile"]) <= 100:
                     raise ValueError("Public payload has an invalid visualization quantile")
+                if result["rank_kind"] not in {
+                    "official_public",
+                    "official_private",
+                    "late_estimate",
+                }:
+                    raise ValueError("Public payload has an invalid visualization rank source")
+                if result["score_kind"] not in {
+                    "official_public",
+                    "official_private",
+                    "authenticated_private",
+                    "late_public",
+                    "late_private",
+                }:
+                    raise ValueError("Public payload has an invalid visualization score source")
 
 
 def write_json_atomic(payload: dict[str, Any], output_path: Path) -> None:

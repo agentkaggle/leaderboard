@@ -10,6 +10,7 @@ from agentkaggle_leaderboard.settings import (
     normalize_team_name,
     parse_api_tokens,
     parse_legacy_credentials,
+    parse_team_aliases,
     parse_team_names,
 )
 
@@ -27,6 +28,32 @@ class SettingsTests(unittest.TestCase):
     def test_duplicate_normalized_names_are_rejected_without_values(self) -> None:
         with self.assertRaisesRegex(ConfigurationError, "duplicate names"):
             parse_team_names('["Alpha", " alpha "]')
+
+    def test_team_aliases_are_normalized_and_map_to_one_canonical_name(self) -> None:
+        aliases = parse_team_aliases('{"Justin Kimlim":"kimlim"}')
+        settings = Settings(("kimlim",), team_aliases=aliases)
+
+        self.assertEqual(aliases, (("Justin Kimlim", "kimlim"),))
+        self.assertEqual(settings.normalized_teams["justin kimlim"], "kimlim")
+        self.assertEqual(settings.normalized_teams["kimlim"], "kimlim")
+
+    def test_team_aliases_add_their_canonical_team_from_environment(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "KAGGLE_API_TOKEN": "primary-token",
+                "KAGGLE_TEAM_ALIASES": '{"Justin Kimlim":"kimlim"}',
+            },
+            clear=True,
+        ):
+            settings = Settings.from_environment(load_local_dotenv=False)
+
+        self.assertEqual(settings.teams, ("kimlim",))
+        self.assertEqual(settings.normalized_teams["justin kimlim"], "kimlim")
+
+    def test_team_aliases_reject_non_string_values(self) -> None:
+        with self.assertRaisesRegex(ConfigurationError, "map team name strings"):
+            parse_team_aliases('{"Justin Kimlim":42}')
 
     def test_empty_configuration_is_rejected(self) -> None:
         with self.assertRaises(ConfigurationError):

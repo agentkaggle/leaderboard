@@ -24,7 +24,7 @@ from agentkaggle_leaderboard.kaggle_source import (
     validate_leaderboard_visibility,
 )
 from agentkaggle_leaderboard.models import Competition, LeaderboardSnapshot
-from agentkaggle_leaderboard.settings import LegacyKaggleCredential
+from agentkaggle_leaderboard.settings import LegacyKaggleCredential, Settings
 
 
 class KaggleSourceTests(unittest.TestCase):
@@ -446,6 +446,40 @@ class KaggleSourceTests(unittest.TestCase):
         self.assertEqual(snapshot.matches[0].score, "0.876543210")
         self.assertEqual(snapshot.score_values, ("0.999", "0.876543210"))
         self.assertNotIn("private-field", repr(snapshot))
+
+    def test_archive_reader_maps_a_competition_team_alias_to_one_account(self) -> None:
+        rows = [
+            {"Rank": "1", "TeamId": "10", "TeamName": "Other", "Score": "3000.0"},
+            {
+                "Rank": "1099",
+                "TeamId": "11",
+                "TeamName": "Justin Kimlim",
+                "Score": "1368.9",
+            },
+        ]
+        settings = Settings(
+            ("kimlim",),
+            team_aliases=(("Justin Kimlim", "kimlim"),),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = Path(temp_dir, "board.csv")
+            with csv_path.open("w", encoding="utf-8", newline="") as csv_file:
+                writer = csv.DictWriter(csv_file, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            archive_path = Path(temp_dir, "sample.zip")
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.write(csv_path, "sample-publicleaderboard.csv")
+
+            snapshot = KaggleCompetitionSource._read_archive(
+                archive_path,
+                settings.normalized_teams,
+            )
+
+        self.assertEqual(len(snapshot.matches), 1)
+        self.assertEqual(snapshot.matches[0].configured_team_name, "kimlim")
+        self.assertEqual(snapshot.matches[0].rank, 1099)
+        self.assertEqual(snapshot.matches[0].score, "1368.9")
 
     def test_archive_reader_uses_best_rank_and_counts_each_team_once(self) -> None:
         rows = [

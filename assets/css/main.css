@@ -205,7 +205,11 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 .chart-bar-value { fill: #dffaf2; font-size: 12px; font-weight: 750; font-variant-numeric: tabular-nums; }
 .chart-bar-value-inside { fill: #061612; }
 .chart-point-label { fill: #b8cdd1; font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.chart-point-initial, .chart-legend-initial { font: 850 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.chart-legend-initial { fill: #061612; font-size: 7px; }
 .chart-legend-label { fill: #91aab0; font-size: 11px; }
+.chart-interactive-mark { cursor: help; outline: none; transform-box: fill-box; transform-origin: center; transition: filter .14s ease, transform .14s ease; }
+.chart-interactive-mark:hover, .chart-interactive-mark:focus { filter: brightness(1.2) drop-shadow(0 0 5px rgba(223, 250, 242, .55)); transform: scale(1.08); }
 .chart-table-details { border-top: 1px solid var(--line); }
 .chart-table-details summary { width: fit-content; margin: 0 20px; padding: 14px 2px; color: var(--accent-2); font-size: .8rem; cursor: pointer; }
 .chart-table-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
@@ -213,6 +217,14 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 .chart-data-table { min-width: 920px; }
 .chart-data-table th:first-child { padding-left: 22px; }
 .chart-data-table td:last-child { padding-right: 22px; }
+.table-source { display: block; margin-top: 4px; color: var(--muted); font-size: .68rem; font-weight: 500; white-space: nowrap; }
+.chart-tooltip { position: fixed; z-index: 100; width: min(320px, calc(100vw - 24px)); padding: 14px 15px; border: 1px solid rgba(115, 213, 255, .42); border-radius: 8px; background: rgba(5, 15, 20, .97); box-shadow: 0 18px 52px rgba(0, 0, 0, .48); color: var(--text); pointer-events: none; }
+.chart-tooltip-competition { display: block; overflow: hidden; color: var(--accent-2); font-size: .7rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.chart-tooltip-team { display: block; margin-top: 5px; font-size: 1rem; }
+.chart-tooltip-details { display: grid; grid-template-columns: auto 1fr; gap: 4px 13px; margin: 11px 0 0; font-size: .76rem; }
+.chart-tooltip-details dt { color: var(--muted); }
+.chart-tooltip-details dd { margin: 0; color: #dffaf2; font-variant-numeric: tabular-nums; text-align: right; }
+.chart-tooltip-provenance { margin: 10px 0 0; padding-top: 9px; border-top: 1px solid var(--line); color: #839da4; font-size: .68rem; }
 .viz-methodology { display: grid; grid-template-columns: 260px 1fr; gap: 50px; margin-top: 92px; padding-top: 42px; border-top: 1px solid var(--line); }
 
 footer { border-top: 1px solid var(--line); color: #668087; }

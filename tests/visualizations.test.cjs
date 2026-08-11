@@ -3,7 +3,15 @@ const path = require("node:path");
 const test = require("node:test");
 
 const visualizationsPath = path.resolve(__dirname, "../assets/js/visualizations.js");
-const { pointOffsets, scaleQuantile, truncateLabel } = require(visualizationsPath);
+const {
+  pointOffsets,
+  rankSourceLabel,
+  scaleQuantile,
+  scoreSourceLabel,
+  teamColor,
+  teamInitial,
+  truncateLabel,
+} = require(visualizationsPath);
 
 test("quantile scales preserve the endpoints and expand the completed top tail", () => {
   assert.equal(scaleQuantile(0), 0);
@@ -18,7 +26,25 @@ test("quantile scales preserve the endpoints and expand the completed top tail",
 
 test("point offsets stay centered and labels truncate by Unicode character", () => {
   assert.deepEqual(pointOffsets(1, 76), [0]);
-  assert.deepEqual(pointOffsets(3, 76), [-19, 0, 19]);
+  assert.deepEqual(pointOffsets(3, 76), [-24, 0, 24]);
   assert.equal(truncateLabel("short", 8), "short");
   assert.equal(truncateLabel("比赛成绩分布", 5), "比赛成绩…");
+});
+
+test("every account receives a distinct color and a stable short label", () => {
+  const colors = Array.from({ length: 24 }, (_, index) => teamColor(index, 24));
+  assert.equal(new Set(colors).size, colors.length);
+  assert.equal(teamColor(7, 24), teamColor(7, 24));
+  assert.equal(teamInitial("FlameZywoo"), "F");
+  assert.equal(teamInitial("Changye Li"), "CL");
+  assert.equal(teamInitial("Bayes & Beyond"), "BB");
+  assert.equal(teamInitial("δ-me13"), "ΔM");
+});
+
+test("rank and score labels keep Public, Private, and estimates explicit", () => {
+  assert.equal(rankSourceLabel({ rankKind: "official_private" }), "Private rank");
+  assert.equal(rankSourceLabel({ rankKind: "official_public" }), "Public rank");
+  assert.equal(rankSourceLabel({ rankKind: "late_estimate" }), "Estimated rank*");
+  assert.equal(scoreSourceLabel({ scoreKind: "authenticated_private" }), "Private score");
+  assert.equal(scoreSourceLabel({ scoreKind: "late_private" }), "Late Private score");
 });

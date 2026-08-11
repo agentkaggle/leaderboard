@@ -57,6 +57,36 @@ def parse_team_names(raw_value: str | None) -> tuple[str, ...]:
     return names
 
 
+def parse_team_aliases(raw_value: str | None) -> tuple[tuple[str, str], ...]:
+    if not raw_value or not raw_value.strip():
+        return ()
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError("KAGGLE_TEAM_ALIASES is not a valid JSON object") from exc
+    if not isinstance(parsed, dict) or not all(
+        isinstance(alias, str) and isinstance(canonical, str)
+        for alias, canonical in parsed.items()
+    ):
+        raise ConfigurationError(
+            "KAGGLE_TEAM_ALIASES JSON must map team name strings to canonical name strings"
+        )
+
+    aliases: dict[str, tuple[str, str]] = {}
+    for raw_alias, raw_canonical in parsed.items():
+        alias = raw_alias.strip()
+        canonical = raw_canonical.strip()
+        if not alias or not canonical:
+            raise ConfigurationError("KAGGLE_TEAM_ALIASES names must not be empty")
+        alias_key = normalize_team_name(alias)
+        if alias_key in aliases:
+            raise ConfigurationError(
+                "KAGGLE_TEAM_ALIASES contains duplicate aliases after normalization"
+            )
+        aliases[alias_key] = (alias, canonical)
+    return tuple(aliases.values())
+
+
 def parse_api_token_array(raw_tokens: str | None) -> tuple[str, ...]:
     if not raw_tokens or not raw_tokens.strip():
         return ()
@@ -183,10 +213,27 @@ class Settings:
         default=(), repr=False, compare=False
     )
     auto_discover_teams: bool = False
+    team_aliases: tuple[tuple[str, str], ...] = ()
 
     @property
     def normalized_teams(self) -> dict[str, str]:
-        return {normalize_team_name(name): name for name in self.teams}
+        normalized = {normalize_team_name(name): name for name in self.teams}
+        for alias, configured_canonical in self.team_aliases:
+            canonical = normalized.get(
+                normalize_team_name(configured_canonical),
+                configured_canonical,
+            )
+            alias_key = normalize_team_name(alias)
+            existing = normalized.get(alias_key)
+            if (
+                existing is not None
+                and normalize_team_name(existing) != normalize_team_name(canonical)
+            ):
+                raise ConfigurationError(
+                    "KAGGLE_TEAM_ALIASES conflicts with a configured team name"
+                )
+            normalized[alias_key] = canonical
+        return normalized
 
     @classmethod
     def from_environment(cls, *, load_local_dotenv: bool = True) -> "Settings":
@@ -195,6 +242,11 @@ class Settings:
         auto_discover_teams = _parse_bool("KAGGLE_AUTO_DISCOVER_TEAMS", default=False)
         raw_teams = os.environ.get("KAGGLE_TEAMS")
         teams = parse_team_names(raw_teams) if raw_teams and raw_teams.strip() else ()
+        team_aliases = parse_team_aliases(os.environ.get("KAGGLE_TEAM_ALIASES"))
+        teams = merge_team_names(
+            teams,
+            tuple(canonical for _, canonical in team_aliases),
+        )
         if not teams and not auto_discover_teams:
             raise ConfigurationError(
                 "KAGGLE_TEAMS is required unless KAGGLE_AUTO_DISCOVER_TEAMS is true"
@@ -234,4 +286,5 @@ class Settings:
             api_tokens=api_tokens,
             team_discovery_api_tokens=team_discovery_api_tokens,
             auto_discover_teams=auto_discover_teams,
+            team_aliases=team_aliases,
         )

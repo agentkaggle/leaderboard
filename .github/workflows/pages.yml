@@ -53,6 +53,7 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           KAGGLE_API_TOKENS: ${{ secrets.KAGGLE_API_TOKENS }}
           KAGGLE_LEGACY_CREDENTIALS: ${{ secrets.KAGGLE_LEGACY_CREDENTIALS }}
+          KAGGLE_TEAM_ALIASES: '{"Justin Kimlim":"kimlim"}'
           KAGGLE_AUTO_DISCOVER_TEAMS: "true"
           KAGGLE_SCAN_WORKERS: "2"
           KAGGLE_REQUEST_INTERVAL_SECONDS: "2"

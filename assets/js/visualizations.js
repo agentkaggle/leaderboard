@@ -2,20 +2,6 @@
   "use strict";
 
   const SVG_NS = "http://www.w3.org/2000/svg";
-  const TEAM_COLORS = [
-    "#39e6b0",
-    "#73d5ff",
-    "#ffc563",
-    "#ff7f96",
-    "#c4a7ff",
-    "#83d88b",
-    "#ff9b66",
-    "#d7e76f",
-    "#7da8ff",
-    "#ef91d0",
-    "#63d4cf",
-    "#f0a8ff",
-  ];
   const LENS_KNOTS = [
     [0, 0],
     [80, 0.24],
@@ -45,6 +31,43 @@
       : `${characters.slice(0, maximum - 1).join("")}…`;
   };
 
+  const teamColor = (index, total) => {
+    const count = Math.max(1, Number(total) || 1);
+    const hue = (156 + (Number(index) * 360) / count) % 360;
+    const saturation = 72 + (Number(index) % 3) * 6;
+    const lightness = 60 + (Math.floor(Number(index) / 3) % 2) * 7;
+    return `hsl(${hue.toFixed(1)} ${saturation}% ${lightness}%)`;
+  };
+
+  const teamInitial = (value) => {
+    const tokens = String(value)
+      .trim()
+      .split(/[\s_-]+/u)
+      .filter((token) => /[\p{L}\p{N}]/u.test(token));
+    if (!tokens.length) return "?";
+    const selected = tokens.length > 1 ? tokens.slice(0, 2) : tokens;
+    return selected
+      .map((token) => Array.from(token)[0] || "")
+      .join("")
+      .toLocaleUpperCase("en-US");
+  };
+
+  const rankSourceLabel = (record) =>
+    ({
+      official_public: "Public rank",
+      official_private: "Private rank",
+      late_estimate: "Estimated rank*",
+    })[record.rankKind] || "Rank";
+
+  const scoreSourceLabel = (record) =>
+    ({
+      official_public: "Public score",
+      official_private: "Private score",
+      authenticated_private: "Private score",
+      late_public: "Late Public score",
+      late_private: "Late Private score",
+    })[record.scoreKind] || "Score";
+
   const svgNode = (name, attributes = {}, text = "") => {
     const node = document.createElementNS(SVG_NS, name);
     Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, String(value)));
@@ -67,6 +90,8 @@
       quantile: Number(datum.dataset.quantile),
       score: datum.dataset.score || "",
       resultKind: datum.dataset.resultKind || "",
+      rankKind: datum.dataset.rankKind || "",
+      scoreKind: datum.dataset.scoreKind || "",
       official: datum.dataset.isOfficial === "true",
       provenance: datum.dataset.provenance || "",
     }));
@@ -147,9 +172,121 @@
   };
 
   const resultTooltip = (record) =>
-    `${record.competition}\n${record.team} · score ${record.score}\n` +
-    `Q${record.quantile.toFixed(2)} · Top ${record.topPercent.toFixed(2)}% · ` +
-    `#${record.rank} / ${record.teamCount}\n${record.provenance}`;
+    `${record.competition}\n${record.team}\n` +
+    `${rankSourceLabel(record)} #${record.rank} / ${record.teamCount}\n` +
+    `${scoreSourceLabel(record)} ${record.score}\n` +
+    `Q${record.quantile.toFixed(2)} · Top ${record.topPercent.toFixed(2)}%\n` +
+    record.provenance;
+
+  let tooltipNode;
+
+  const ensureTooltip = () => {
+    if (tooltipNode) return tooltipNode;
+    tooltipNode = document.createElement("div");
+    tooltipNode.id = "chart-result-tooltip";
+    tooltipNode.className = "chart-tooltip";
+    tooltipNode.setAttribute("role", "tooltip");
+    tooltipNode.hidden = true;
+    document.body.append(tooltipNode);
+    window.addEventListener(
+      "scroll",
+      () => {
+        tooltipNode.hidden = true;
+      },
+      { capture: true, passive: true },
+    );
+    window.addEventListener("resize", () => {
+      tooltipNode.hidden = true;
+    });
+    return tooltipNode;
+  };
+
+  const tooltipTextNode = (name, className, value) => {
+    const node = document.createElement(name);
+    node.className = className;
+    node.textContent = value;
+    return node;
+  };
+
+  const fillTooltip = (tooltip, record) => {
+    const details = document.createElement("dl");
+    details.className = "chart-tooltip-details";
+    [
+      [
+        "Rank",
+        `${rankSourceLabel(record)} · #${record.rank.toLocaleString()} / ${record.teamCount.toLocaleString()}`,
+      ],
+      ["Score", `${scoreSourceLabel(record)} · ${record.score}`],
+      ["Quantile", `Q${record.quantile.toFixed(2)}`],
+      ["Top", `${record.topPercent.toFixed(2)}%`],
+    ].forEach(([term, value]) => {
+      details.append(
+        tooltipTextNode("dt", "", term),
+        tooltipTextNode("dd", "", value),
+      );
+    });
+    tooltip.replaceChildren(
+      tooltipTextNode("span", "chart-tooltip-competition", record.competition),
+      tooltipTextNode("strong", "chart-tooltip-team", record.team),
+      details,
+      tooltipTextNode("p", "chart-tooltip-provenance", record.provenance),
+    );
+  };
+
+  const positionTooltip = (tooltip, clientX, clientY) => {
+    const edge = 12;
+    const offset = 16;
+    tooltip.hidden = false;
+    const bounds = tooltip.getBoundingClientRect();
+    const left = Math.max(
+      edge,
+      Math.min(clientX + offset, window.innerWidth - bounds.width - edge),
+    );
+    const preferredTop = clientY - bounds.height - offset;
+    const top = Math.max(
+      edge,
+      preferredTop >= edge
+        ? preferredTop
+        : Math.min(clientY + offset, window.innerHeight - bounds.height - edge),
+    );
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  };
+
+  const bindRecordTooltip = (node, record) => {
+    const tooltip = ensureTooltip();
+    node.classList.add("chart-interactive-mark");
+    node.setAttribute("tabindex", "0");
+    node.setAttribute("aria-describedby", tooltip.id);
+    node.setAttribute("aria-label", resultTooltip(record).replaceAll("\n", ". "));
+
+    const showAt = (clientX, clientY) => {
+      fillTooltip(tooltip, record);
+      positionTooltip(tooltip, clientX, clientY);
+    };
+    node.addEventListener("pointerenter", (event) => {
+      showAt(event.clientX, event.clientY);
+    });
+    node.addEventListener("pointermove", (event) => {
+      if (!tooltip.hidden) positionTooltip(tooltip, event.clientX, event.clientY);
+    });
+    node.addEventListener("pointerleave", () => {
+      if (document.activeElement !== node) tooltip.hidden = true;
+    });
+    node.addEventListener("focus", () => {
+      const bounds = node.getBoundingClientRect();
+      showAt(bounds.left + bounds.width / 2, bounds.top);
+    });
+    node.addEventListener("blur", () => {
+      tooltip.hidden = true;
+    });
+    node.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        tooltip.hidden = true;
+      }
+    });
+    return node;
+  };
 
   const renderBarChart = (mount, records) => {
     const width = 1180;
@@ -196,21 +333,24 @@
         svgNode(
           "text",
           { class: "chart-row-meta", x: 24, y: y + 27 },
-          truncateLabel(`${record.team} · score ${record.score}`, 41),
+          truncateLabel(`${record.team} · ${scoreSourceLabel(record)} ${record.score}`, 41),
         ),
       );
-      const bar = addTooltip(
-        svgNode("rect", {
-          x: left,
-          y,
-          width: Math.max(2, barWidth),
-          height: 34,
-          rx: 4,
-          fill: record.official ? "#39e6b0" : `url(#${patternId})`,
-          stroke: record.official ? "#82f3cf" : "#ffc563",
-          "stroke-width": 1,
-        }),
-        resultTooltip(record),
+      const bar = bindRecordTooltip(
+        addTooltip(
+          svgNode("rect", {
+            x: left,
+            y,
+            width: Math.max(2, barWidth),
+            height: 34,
+            rx: 4,
+            fill: record.official ? "#39e6b0" : `url(#${patternId})`,
+            stroke: record.official ? "#82f3cf" : "#ffc563",
+            "stroke-width": 1,
+          }),
+          resultTooltip(record),
+        ),
+        record,
       );
       const valueInside = barWidth >= 82;
       svg.append(
@@ -228,12 +368,13 @@
         svgNode(
           "text",
           { class: "chart-rank-label", x: right + 20, y: y + 7 },
-          `#${record.rank.toLocaleString()} / ${record.teamCount.toLocaleString()}`,
+          `${rankSourceLabel(record)} · #${record.rank.toLocaleString()} / ` +
+            record.teamCount.toLocaleString(),
         ),
         svgNode(
           "text",
           { class: "chart-row-meta", x: right + 20, y: y + 29 },
-          `Top ${record.topPercent.toFixed(2)}% · ${record.official ? "OFFICIAL" : "LATE EST.*"}`,
+          `Top ${record.topPercent.toFixed(2)}% · ${scoreSourceLabel(record)}`,
         ),
       );
     });
@@ -241,7 +382,7 @@
 
   const pointOffsets = (count, rowHeight) => {
     if (count <= 1) return [0];
-    const span = Math.min(rowHeight - 24, (count - 1) * 19);
+    const span = Math.min(rowHeight - 28, (count - 1) * 24);
     return Array.from({ length: count }, (_, index) => -span / 2 + (span * index) / (count - 1));
   };
 
@@ -261,7 +402,7 @@
     const rowLayouts = [...grouped.entries()].map(([competition, groupRecords]) => ({
       competition,
       records: groupRecords,
-      height: Math.max(76, 38 + groupRecords.length * 19),
+      height: Math.max(82, 44 + groupRecords.length * 24),
     }));
     let cursor = top;
     rowLayouts.forEach((row) => {
@@ -272,7 +413,7 @@
     const plotBottom = cursor;
     const legendColumns = 4;
     const legendRows = Math.ceil(teams.length / legendColumns);
-    const legendHeight = 64 + legendRows * 26;
+    const legendHeight = 68 + legendRows * 30;
     const height = Math.max(330, plotBottom + legendHeight);
     const svg = chartFrame(mount, width, height);
     const scale = mount.dataset.chartScale || "linear";
@@ -322,17 +463,20 @@
       row.records.forEach((record, index) => {
         const x = left + plotWidth * scaleQuantile(record.quantile, scale);
         const y = row.center + offsets[index];
-        const color = teamColors.get(record.team) || TEAM_COLORS[0];
-        const marker = addTooltip(
-          svgNode("circle", {
-            cx: x,
-            cy: y,
-            r: record.official ? 7 : 6.5,
-            fill: record.official ? color : "#0c1a21",
-            stroke: color,
-            "stroke-width": record.official ? 2 : 3.5,
-          }),
-          resultTooltip(record),
+        const color = teamColors.get(record.team) || "#39e6b0";
+        const marker = bindRecordTooltip(
+          addTooltip(
+            svgNode("circle", {
+              cx: x,
+              cy: y,
+              r: record.official ? 10 : 9.5,
+              fill: record.official ? color : "#0c1a21",
+              stroke: color,
+              "stroke-width": record.official ? 2 : 3.5,
+            }),
+            resultTooltip(record),
+          ),
+          record,
         );
         const labelOnLeft = x > left + plotWidth - 120;
         svg.append(
@@ -340,8 +484,18 @@
           svgNode(
             "text",
             {
+              class: "chart-point-initial",
+              x,
+              y,
+              fill: record.official ? "#061612" : color,
+            },
+            teamInitial(record.team),
+          ),
+          svgNode(
+            "text",
+            {
               class: "chart-point-label",
-              x: labelOnLeft ? x - 11 : x + 11,
+              x: labelOnLeft ? x - 15 : x + 15,
               y: y + 4,
               "text-anchor": labelOnLeft ? "end" : "start",
             },
@@ -362,10 +516,19 @@
       const column = index % legendColumns;
       const row = Math.floor(index / legendColumns);
       const x = 28 + column * 290;
-      const y = legendTop + 34 + row * 26;
+      const y = legendTop + 36 + row * 30;
+      const color = teamColors.get(team);
       svg.append(
-        svgNode("circle", { cx: x, cy: y, r: 5, fill: teamColors.get(team) }),
-        svgNode("text", { class: "chart-legend-label", x: x + 13, y: y + 4 }, truncateLabel(team, 28)),
+        svgNode("circle", {
+          cx: x,
+          cy: y,
+          r: 9,
+          fill: color,
+          stroke: "#dffaf2",
+          "stroke-width": 1,
+        }),
+        svgNode("text", { class: "chart-legend-initial", x, y }, teamInitial(team)),
+        svgNode("text", { class: "chart-legend-label", x: x + 16, y: y + 4 }, truncateLabel(team, 28)),
       );
     });
   };
@@ -382,7 +545,7 @@
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b, "zh-CN"));
     const teamColors = new Map(
-      allTeams.map((team, index) => [team, TEAM_COLORS[index % TEAM_COLORS.length]]),
+      allTeams.map((team, index) => [team, teamColor(index, allTeams.length)]),
     );
 
     mounts.forEach((mount) => {
@@ -393,7 +556,15 @@
     });
   };
 
-  const exported = { scaleQuantile, truncateLabel, pointOffsets };
+  const exported = {
+    pointOffsets,
+    rankSourceLabel,
+    scaleQuantile,
+    scoreSourceLabel,
+    teamColor,
+    teamInitial,
+    truncateLabel,
+  };
   if (typeof module !== "undefined" && module.exports) module.exports = exported;
   if (typeof document === "undefined") return;
   if (document.readyState === "loading") {
