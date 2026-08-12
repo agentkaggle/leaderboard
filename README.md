@@ -140,7 +140,7 @@ Kaggle 对部分比赛可能返回 403、404、429 或不完整响应；例如�
 
 Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提交，不能凭一个账户查看任意其他用户的 submission。因此，多账户覆盖必须由每位参与者自愿提供自己的 token。
 
-程序对每个授权账户枚举其 `entered` 比赛。比赛结束后，如果一个截止前提交的 Public Score 能唯一匹配该团队当前官方 Public Leaderboard Score，页面会显示这个提交对应的 Private Score。若存在多个相同 Public Score 但 Private Score 不同的提交，程序会保持空白，避免猜测。正式 Private Leaderboard 发布前不会推断 Private Rank；Kaggle 下载接口切换到 Private Leaderboard 后，官方 Rank、Top% 和 Score 会自动全部使用 Private 数据。
+程序对每个授权账户枚举其 `entered` 比赛。比赛结束后，如果一个截止前提交的 Public Score 能唯一匹配该团队当前官方 Public Leaderboard Score，页面会显示这个提交对应的 Private Score，并优先使用同一账户 entered competition 元数据中的最终 Private Rank。若存在多个相同 Public Score 但 Private Score 或账号名次不一致，程序会保持空白，避免猜测。Private Rank 由 Kaggle 的账号级认证响应直接给出，不根据 Private Score 或 Public 榜推算；Kaggle 下载接口切换到 Private Leaderboard 后，官方 Rank、Top% 和 Score 也会自动全部使用 Private 数据。
 
 启用自动发现时，每个 token 的提交记录还用于识别该账户在不同比赛中实际使用的 team name；这些 entered 比赛会与公开 `general` / `community` 目录合并后去重，再由能够访问它的授权账户读取 leaderboard。没有完成提交的已加入比赛无法可靠确定 team name，因此不会凭账号加入状态推断公开身份。
 
@@ -153,7 +153,7 @@ Kaggle 的 My Submissions 接口只返回当前 token 所属账户可见的提�
 - 已完成每场最佳分位：每场比赛中最好的官方最终结果或可计算 late 估算。
 - 已完成全部账号成绩：所有账号在已完成比赛中的最佳可比较结果。
 
-统一使用 `Quantile = 100 - Top%`，数值越大越好。已完成散点图会展开 Q95–Q100 区间；实心标记是官方排名，空心标记是将 late score 与完整最终榜单比较得到的估算。官方 Private Leaderboard 已发布时固定优先使用 Private Rank 与 Score；只有 Public Rank 时仍保留该官方位次，但分数优先显示唯一匹配的认证 Private Score，并分别标明来源。每个账号使用唯一颜色和点内缩写，鼠标悬停或键盘聚焦可查看完整详情。图和数据表随 Pages 的每日任务一起重新生成。
+统一使用 `Quantile = 100 - Top%`，数值越大越好。已完成散点图会展开 Q95–Q100 区间；实心标记是官方排名，空心标记是将 late score 与完整最终榜单比较得到的估算。已完成比赛固定优先使用可用的 Private Rank 与 Score；只有无法取得 Private Rank 时才回退 Public Rank，并分别标明来源。每个账号使用唯一颜色和点内缩写，鼠标悬停或键盘聚焦可查看完整详情及成绩时间；点击图例会用白色外圈高亮该账号的全部散点，再次点击取消。图和数据表随 Pages 的每日任务一起重新生成。
 
 截止后的 late submission 只发布同时满足以下条件的记录：
 

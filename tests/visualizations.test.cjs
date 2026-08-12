@@ -4,6 +4,7 @@ const test = require("node:test");
 
 const visualizationsPath = path.resolve(__dirname, "../assets/js/visualizations.js");
 const {
+  formatResultTime,
   pointOffsets,
   rankSourceLabel,
   scaleQuantile,
@@ -12,6 +13,12 @@ const {
   teamInitial,
   truncateLabel,
 } = require(visualizationsPath);
+
+test("result times are localized safely", () => {
+  assert.equal(formatResultTime(""), "Unavailable");
+  assert.equal(formatResultTime("not-a-date"), "not-a-date");
+  assert.match(formatResultTime("2026-08-05T02:27:44Z"), /2026/u);
+});
 
 test("quantile scales preserve the endpoints and expand the completed top tail", () => {
   assert.equal(scaleQuantile(0), 0);
@@ -43,6 +50,7 @@ test("every account receives a distinct color and a stable short label", () => {
 
 test("rank and score labels keep Public, Private, and estimates explicit", () => {
   assert.equal(rankSourceLabel({ rankKind: "official_private" }), "Private rank");
+  assert.equal(rankSourceLabel({ rankKind: "authenticated_private" }), "Private rank");
   assert.equal(rankSourceLabel({ rankKind: "official_public" }), "Public rank");
   assert.equal(rankSourceLabel({ rankKind: "late_estimate" }), "Estimated rank*");
   assert.equal(scoreSourceLabel({ scoreKind: "authenticated_private" }), "Private score");

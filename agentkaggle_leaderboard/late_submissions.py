@@ -92,6 +92,8 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
         discover_teams: bool,
         include_late_submissions: bool,
         include_authenticated_scores: bool,
+        private_rank: int | None = None,
+        private_rank_team_count: int | None = None,
     ) -> tuple[
         list[LateSubmissionEntry],
         list[AuthenticatedSubmissionScoreEntry],
@@ -148,6 +150,8 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
                             public_score=public_score,
                             private_score=private_score,
                             submission_date=submitted_at,
+                            private_rank=private_rank,
+                            private_rank_team_count=private_rank_team_count,
                         )
                     )
                 if (
@@ -192,11 +196,10 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
         collected: list[LateSubmissionEntry] = []
         collected_authenticated_scores: list[AuthenticatedSubmissionScoreEntry] = []
         discovered_teams: dict[str, str] = {}
-        entered_competitions = tuple(
-            competition_from_api(item) for item in self._list_entered_competitions()
-        )
+        entered_items = self._list_entered_competitions()
+        entered_competitions = tuple(competition_from_api(item) for item in entered_items)
 
-        for competition in entered_competitions:
+        for item, competition in zip(entered_items, entered_competitions, strict=True):
             deadline = (
                 _as_utc(competition.deadline)
                 if competition.deadline is not None
@@ -204,6 +207,17 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
             )
             include_late_submissions = deadline is not None and deadline < current_time
             include_authenticated_scores = include_late_submissions
+            private_rank = int(getattr(item, "user_rank", 0) or 0)
+            private_rank = (
+                private_rank
+                if 0 < private_rank <= competition.api_team_count
+                else None
+            )
+            private_rank_team_count = (
+                competition.api_team_count
+                if private_rank is not None and competition.api_team_count > 0
+                else None
+            )
             if (
                 not discover_teams
                 and not include_late_submissions
@@ -219,6 +233,8 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
                     discover_teams=discover_teams,
                     include_late_submissions=include_late_submissions,
                     include_authenticated_scores=include_authenticated_scores,
+                    private_rank=private_rank,
+                    private_rank_team_count=private_rank_team_count,
                 )
             )
             collected.extend(entries)

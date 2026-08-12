@@ -210,6 +210,12 @@ tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
 .chart-legend-label { fill: #91aab0; font-size: 11px; }
 .chart-interactive-mark { cursor: help; outline: none; transform-box: fill-box; transform-origin: center; transition: filter .14s ease, transform .14s ease; }
 .chart-interactive-mark:hover, .chart-interactive-mark:focus { filter: brightness(1.2) drop-shadow(0 0 5px rgba(223, 250, 242, .55)); transform: scale(1.08); }
+.chart-team-highlight-ring { opacity: 0; pointer-events: none; transition: filter .14s ease, opacity .14s ease; }
+.chart-team-highlight-ring.chart-team-highlighted { opacity: 1; filter: drop-shadow(0 0 5px rgba(255, 255, 255, .9)); }
+.chart-legend-control { cursor: pointer; outline: none; }
+.chart-legend-control circle { transition: filter .14s ease, stroke-width .14s ease; }
+.chart-legend-control:hover circle, .chart-legend-control:focus circle, .chart-legend-selected circle { filter: drop-shadow(0 0 5px rgba(255, 255, 255, .9)); stroke: #fff; stroke-width: 4; }
+.chart-legend-selected .chart-legend-label { fill: #fff; font-weight: 750; }
 .chart-table-details { border-top: 1px solid var(--line); }
 .chart-table-details summary { width: fit-content; margin: 0 20px; padding: 14px 2px; color: var(--accent-2); font-size: .8rem; cursor: pointer; }
 .chart-table-details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

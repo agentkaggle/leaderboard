@@ -53,6 +53,8 @@ class AuthenticatedSubmissionScoreEntry:
     public_score: str
     private_score: str
     submission_date: datetime
+    private_rank: int | None = None
+    private_rank_team_count: int | None = None
 
 
 class CompetitionSource(Protocol):

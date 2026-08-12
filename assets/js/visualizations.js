@@ -56,6 +56,7 @@
     ({
       official_public: "Public rank",
       official_private: "Private rank",
+      authenticated_private: "Private rank",
       late_estimate: "Estimated rank*",
     })[record.rankKind] || "Rank";
 
@@ -67,6 +68,24 @@
       late_public: "Late Public score",
       late_private: "Late Private score",
     })[record.scoreKind] || "Score";
+
+  const formatResultTime = (value) => {
+    const rawValue = String(value || "").trim();
+    if (!rawValue) return "Unavailable";
+    const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/u.test(rawValue)
+      ? rawValue
+      : `${rawValue.replace(" ", "T")}Z`;
+    const date = new Date(normalized);
+    if (Number.isNaN(date.valueOf())) return rawValue;
+    return new Intl.DateTimeFormat("zh-CN", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(date);
+  };
 
   const svgNode = (name, attributes = {}, text = "") => {
     const node = document.createElementNS(SVG_NS, name);
@@ -92,6 +111,7 @@
       resultKind: datum.dataset.resultKind || "",
       rankKind: datum.dataset.rankKind || "",
       scoreKind: datum.dataset.scoreKind || "",
+      resultTime: datum.dataset.resultTime || "",
       official: datum.dataset.isOfficial === "true",
       provenance: datum.dataset.provenance || "",
     }));
@@ -175,6 +195,7 @@
     `${record.competition}\n${record.team}\n` +
     `${rankSourceLabel(record)} #${record.rank} / ${record.teamCount}\n` +
     `${scoreSourceLabel(record)} ${record.score}\n` +
+    `Result time ${formatResultTime(record.resultTime)}\n` +
     `Q${record.quantile.toFixed(2)} · Top ${record.topPercent.toFixed(2)}%\n` +
     record.provenance;
 
@@ -217,6 +238,7 @@
         `${rankSourceLabel(record)} · #${record.rank.toLocaleString()} / ${record.teamCount.toLocaleString()}`,
       ],
       ["Score", `${scoreSourceLabel(record)} · ${record.score}`],
+      ["Result time", formatResultTime(record.resultTime)],
       ["Quantile", `Q${record.quantile.toFixed(2)}`],
       ["Top", `${record.topPercent.toFixed(2)}%`],
     ].forEach(([term, value]) => {
@@ -478,8 +500,21 @@
           ),
           record,
         );
+        marker.dataset.team = record.team;
+        const highlightRing = svgNode("circle", {
+          class: "chart-team-highlight-ring",
+          cx: x,
+          cy: y,
+          r: 15,
+          fill: "none",
+          stroke: "#fff",
+          "stroke-width": 3,
+          "data-team": record.team,
+          "aria-hidden": "true",
+        });
         const labelOnLeft = x > left + plotWidth - 120;
         svg.append(
+          highlightRing,
           marker,
           svgNode(
             "text",
@@ -518,7 +553,15 @@
       const x = 28 + column * 290;
       const y = legendTop + 36 + row * 30;
       const color = teamColors.get(team);
-      svg.append(
+      const legendControl = svgNode("g", {
+        class: "chart-legend-control",
+        role: "button",
+        tabindex: 0,
+        "aria-label": `Highlight all ${team} results`,
+        "aria-pressed": "false",
+        "data-team": team,
+      });
+      legendControl.append(
         svgNode("circle", {
           cx: x,
           cy: y,
@@ -530,6 +573,38 @@
         svgNode("text", { class: "chart-legend-initial", x, y }, teamInitial(team)),
         svgNode("text", { class: "chart-legend-label", x: x + 16, y: y + 4 }, truncateLabel(team, 28)),
       );
+      svg.append(legendControl);
+    });
+  };
+
+  let highlightedTeam = "";
+
+  const applyTeamHighlight = () => {
+    document.querySelectorAll(".chart-team-highlight-ring[data-team]").forEach((ring) => {
+      ring.classList.toggle(
+        "chart-team-highlighted",
+        Boolean(highlightedTeam) && ring.dataset.team === highlightedTeam,
+      );
+    });
+    document.querySelectorAll(".chart-legend-control").forEach((control) => {
+      const selected = Boolean(highlightedTeam) && control.dataset.team === highlightedTeam;
+      control.classList.toggle("chart-legend-selected", selected);
+      control.setAttribute("aria-pressed", String(selected));
+    });
+  };
+
+  const bindLegendControls = () => {
+    const toggle = (team) => {
+      highlightedTeam = highlightedTeam === team ? "" : team;
+      applyTeamHighlight();
+    };
+    document.querySelectorAll(".chart-legend-control").forEach((control) => {
+      control.addEventListener("click", () => toggle(control.dataset.team || ""));
+      control.addEventListener("keydown", (event) => {
+        if (!['Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+        toggle(control.dataset.team || "");
+      });
     });
   };
 
@@ -554,10 +629,12 @@
       if (mount.dataset.chartType === "bar") renderBarChart(mount, records);
       if (mount.dataset.chartType === "scatter") renderScatterChart(mount, records, teamColors);
     });
+    bindLegendControls();
   };
 
   const exported = {
     pointOffsets,
+    formatResultTime,
     rankSourceLabel,
     scaleQuantile,
     scoreSourceLabel,

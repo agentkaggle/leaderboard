@@ -159,7 +159,7 @@ class BuilderTests(unittest.TestCase):
             late_submission_failure_kinds=("access_denied",),
         )
 
-        self.assertEqual(payload["schema_version"], 8)
+        self.assertEqual(payload["schema_version"], 9)
         self.assertEqual(payload["summary"]["late_submission_account_count"], 2)
         self.assertEqual(payload["summary"]["failed_late_submission_account_count"], 1)
         self.assertEqual(payload["summary"]["late_submission_competition_count"], 1)
@@ -233,6 +233,8 @@ class BuilderTests(unittest.TestCase):
             public_score="7.2290",
             private_score="9.595",
             submission_date=datetime(2026, 5, 31, tzinfo=timezone.utc),
+            private_rank=37,
+            private_rank_team_count=100,
         )
         payload = build_leaderboard(
             EndedPublicSource(),
@@ -247,15 +249,22 @@ class BuilderTests(unittest.TestCase):
             entry["authenticated_private_submission_date"],
             "2026-05-31T00:00:00Z",
         )
+        self.assertEqual(entry["authenticated_private_rank"], 37)
+        self.assertEqual(entry["authenticated_private_top_percent"], 37.0)
+        self.assertEqual(entry["authenticated_private_rank_team_count"], 100)
         self.assertEqual(payload["summary"]["authenticated_private_score_count"], 1)
         visual_result = payload["visualizations"]["completed"]["competitions"][0][
             "results"
         ][0]
-        self.assertEqual(visual_result["rank"], 25)
+        self.assertEqual(visual_result["rank"], 37)
+        self.assertEqual(visual_result["top_percent"], 37.0)
+        self.assertEqual(visual_result["leaderboard_team_count"], 100)
         self.assertEqual(visual_result["score"], "9.595")
-        self.assertEqual(visual_result["rank_kind"], "official_public")
+        self.assertEqual(visual_result["rank_kind"], "authenticated_private")
         self.assertEqual(visual_result["score_kind"], "authenticated_private")
-        self.assertEqual(visual_result["result_kind"], "official_public")
+        self.assertEqual(visual_result["result_kind"], "official_final")
+        self.assertEqual(visual_result["result_time"], "2026-05-31T00:00:00Z")
+        self.assertEqual(payload["teams"][0]["best_rank"], 37)
         validate_public_payload(payload)
 
         active_payload = build_leaderboard(
@@ -266,9 +275,69 @@ class BuilderTests(unittest.TestCase):
         )
         active_entry = active_payload["competitions"][0]["entries"][0]
         self.assertEqual(active_entry["authenticated_private_score"], "")
+        self.assertIsNone(active_entry["authenticated_private_rank"])
         self.assertEqual(
             active_payload["summary"]["authenticated_private_score_count"],
             0,
+        )
+
+    def test_authenticated_private_result_time_uses_the_scored_submission(self) -> None:
+        class EndedPublicSource:
+            competition = Competition(
+                slug="ended-public",
+                title="Ended public competition",
+                url="https://www.kaggle.com/competitions/ended-public",
+                category="Featured",
+                reward="",
+                deadline=datetime(2026, 6, 1, tzinfo=timezone.utc),
+                api_team_count=100,
+            )
+
+            def list_competitions(self, max_competitions=None):
+                return [self.competition]
+
+            def get_leaderboard(self, competition, normalized_teams):
+                return LeaderboardSnapshot(
+                    team_count=100,
+                    kind="public",
+                    matches=(
+                        LeaderboardEntry(
+                            "Alpha", 25, "0.90", "2026-06-01T00:00:00Z"
+                        ),
+                    ),
+                )
+
+        scores = (
+            AuthenticatedSubmissionScoreEntry(
+                competition_slug="ended-public",
+                configured_team_name="Alpha",
+                public_score="0.90",
+                private_score="0.81",
+                submission_date=datetime(2026, 5, 30, tzinfo=timezone.utc),
+                private_rank=10,
+                private_rank_team_count=100,
+            ),
+            AuthenticatedSubmissionScoreEntry(
+                competition_slug="ended-public",
+                configured_team_name="Alpha",
+                public_score="0.90",
+                private_score="",
+                submission_date=datetime(2026, 5, 31, tzinfo=timezone.utc),
+                private_rank=10,
+                private_rank_team_count=100,
+            ),
+        )
+        payload = build_leaderboard(
+            EndedPublicSource(),
+            Settings(("Alpha",), workers=1),
+            generated_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            authenticated_submission_scores=scores,
+        )
+
+        entry = payload["competitions"][0]["entries"][0]
+        self.assertEqual(
+            entry["authenticated_private_submission_date"],
+            "2026-05-30T00:00:00Z",
         )
 
     def test_ambiguous_authenticated_private_score_is_not_published(self) -> None:
@@ -304,6 +373,8 @@ class BuilderTests(unittest.TestCase):
                 public_score="0.90",
                 private_score=private_score,
                 submission_date=datetime(2026, 5, day, tzinfo=timezone.utc),
+                private_rank=30 + day,
+                private_rank_team_count=100,
             )
             for day, private_score in ((30, "0.81"), (31, "0.82"))
         )
@@ -316,7 +387,63 @@ class BuilderTests(unittest.TestCase):
 
         entry = payload["competitions"][0]["entries"][0]
         self.assertEqual(entry["authenticated_private_score"], "")
+        self.assertIsNone(entry["authenticated_private_rank"])
         self.assertEqual(payload["summary"]["authenticated_private_score_count"], 0)
+
+    def test_conflicting_authenticated_private_ranks_are_not_published(self) -> None:
+        class EndedPublicSource:
+            competition = Competition(
+                slug="ended-public",
+                title="Ended public competition",
+                url="https://www.kaggle.com/competitions/ended-public",
+                category="Featured",
+                reward="",
+                deadline=datetime(2026, 6, 1, tzinfo=timezone.utc),
+                api_team_count=100,
+            )
+
+            def list_competitions(self, max_competitions=None):
+                return [self.competition]
+
+            def get_leaderboard(self, competition, normalized_teams):
+                return LeaderboardSnapshot(
+                    team_count=100,
+                    kind="public",
+                    matches=(
+                        LeaderboardEntry(
+                            "Alpha", 25, "0.90", "2026-06-01T00:00:00Z"
+                        ),
+                    ),
+                )
+
+        scores = tuple(
+            AuthenticatedSubmissionScoreEntry(
+                competition_slug="ended-public",
+                configured_team_name="Alpha",
+                public_score="0.90",
+                private_score="0.81",
+                submission_date=datetime(2026, 5, day, tzinfo=timezone.utc),
+                private_rank=rank,
+                private_rank_team_count=100,
+            )
+            for day, rank in ((30, 9), (31, 10))
+        )
+        payload = build_leaderboard(
+            EndedPublicSource(),
+            Settings(("Alpha",), workers=1),
+            generated_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            authenticated_submission_scores=scores,
+        )
+
+        entry = payload["competitions"][0]["entries"][0]
+        self.assertEqual(entry["authenticated_private_score"], "0.81")
+        self.assertIsNone(entry["authenticated_private_rank"])
+        visual_result = payload["visualizations"]["completed"]["competitions"][0][
+            "results"
+        ][0]
+        self.assertEqual(visual_result["rank"], 25)
+        self.assertEqual(visual_result["rank_kind"], "official_public")
+        validate_public_payload(payload)
 
     def test_late_submissions_keep_the_best_score_per_team_and_competition(self) -> None:
         class LowerIsBetterSource:
@@ -609,6 +736,18 @@ class BuilderTests(unittest.TestCase):
         self.assertTrue(
             all(
                 result["result_kind"] == "official_final"
+                for result in completed["competitions"][0]["results"]
+            )
+        )
+        self.assertTrue(
+            all(
+                result["result_time"] == "2026-07-01T00:00:00Z"
+                for result in ongoing["competitions"][0]["results"]
+            )
+        )
+        self.assertTrue(
+            all(
+                result["result_time"] == "2026-06-01T00:00:00Z"
                 for result in completed["competitions"][0]["results"]
             )
         )

@@ -10,11 +10,20 @@ from agentkaggle_leaderboard.kaggle_source import InvalidKaggleResponse
 from agentkaggle_leaderboard.late_submissions import KaggleLateSubmissionSource
 
 
-def competition(slug: str, deadline: datetime, *, title: str | None = None):
+def competition(
+    slug: str,
+    deadline: datetime,
+    *,
+    title: str | None = None,
+    team_count: int = 0,
+    user_rank: int = 0,
+):
     return SimpleNamespace(
         ref=f"https://www.kaggle.com/competitions/{slug}",
         title=title or slug,
         deadline=deadline,
+        team_count=team_count,
+        user_rank=user_rank,
     )
 
 
@@ -85,7 +94,13 @@ class LateSubmissionSourceTests(unittest.TestCase):
             SimpleNamespace(), retry_attempts=1, min_request_interval_seconds=0.000001
         )
         source._list_entered_competitions = lambda: [
-            competition("ended", deadline, title="Ended competition"),
+            competition(
+                "ended",
+                deadline,
+                title="Ended competition",
+                team_count=200,
+                user_rank=37,
+            ),
             competition(
                 "active",
                 datetime(2026, 8, 1, tzinfo=timezone.utc),
@@ -115,6 +130,13 @@ class LateSubmissionSourceTests(unittest.TestCase):
         self.assertTrue(
             all(
                 score.configured_team_name == "Alpha"
+                for score in scan.authenticated_scores
+            )
+        )
+        self.assertTrue(
+            all(
+                score.private_rank == 37
+                and score.private_rank_team_count == 200
                 for score in scan.authenticated_scores
             )
         )
@@ -158,6 +180,28 @@ class LateSubmissionSourceTests(unittest.TestCase):
         self.assertEqual(calls, ["", "older"])
         self.assertEqual(len(entries), 1)
         self.assertEqual(len(scan.authenticated_scores), 2)
+
+    def test_invalid_entered_user_rank_is_not_published(self) -> None:
+        deadline = datetime(2026, 6, 1, tzinfo=timezone.utc)
+        source = KaggleLateSubmissionSource(
+            SimpleNamespace(), retry_attempts=1, min_request_interval_seconds=0.000001
+        )
+        source._list_entered_competitions = lambda: [
+            competition("ended", deadline, team_count=100, user_rank=101)
+        ]
+        source._list_submission_page = lambda slug, page_token: SimpleNamespace(
+            submissions=[submission(datetime(2026, 5, 31, tzinfo=timezone.utc))],
+            next_page_token="",
+        )
+
+        scan = source.collect(
+            {"alpha": "Alpha"},
+            now=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(len(scan.authenticated_scores), 1)
+        self.assertIsNone(scan.authenticated_scores[0].private_rank)
+        self.assertIsNone(scan.authenticated_scores[0].private_rank_team_count)
 
     def test_auto_discovery_reads_the_latest_page_of_active_competitions(self) -> None:
         source = KaggleLateSubmissionSource(

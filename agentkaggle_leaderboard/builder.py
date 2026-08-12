@@ -132,6 +132,9 @@ def _public_competition(
                 "score": entry.score,
                 "authenticated_private_score": "",
                 "authenticated_private_submission_date": "",
+                "authenticated_private_rank": None,
+                "authenticated_private_top_percent": None,
+                "authenticated_private_rank_team_count": None,
                 "submission_date": entry.submission_date,
                 "medal_candidate": (
                     medal_candidate(entry.rank, snapshot.team_count)
@@ -272,11 +275,42 @@ def _merge_authenticated_private_scores(
             }
             if len(private_scores) != 1:
                 continue
-            newest = max(candidates, key=lambda candidate: candidate.submission_date)
-            entry["authenticated_private_score"] = private_scores.pop()
+            private_score = private_scores.pop()
+            private_candidates = [
+                candidate
+                for candidate in candidates
+                if candidate.private_score.strip() == private_score
+            ]
+            newest = max(
+                private_candidates,
+                key=lambda candidate: candidate.submission_date,
+            )
+            entry["authenticated_private_score"] = private_score
             entry["authenticated_private_submission_date"] = _iso_utc(
                 newest.submission_date
             )
+            private_ranks = {
+                (candidate.private_rank, candidate.private_rank_team_count)
+                for candidate in private_candidates
+                if candidate.private_rank is not None
+                and candidate.private_rank_team_count is not None
+                and candidate.private_rank_team_count > 0
+            }
+            if len(private_ranks) == 1:
+                private_rank, private_team_count = private_ranks.pop()
+                if private_rank is None or private_team_count is None:
+                    raise AssertionError("Authenticated private rank is incomplete")
+                entry["authenticated_private_rank"] = private_rank
+                entry["authenticated_private_top_percent"] = round(
+                    (private_rank / private_team_count) * 100,
+                    4,
+                )
+                entry["authenticated_private_rank_team_count"] = private_team_count
+                if competition["awards_points"]:
+                    entry["medal_candidate"] = medal_candidate(
+                        private_rank,
+                        private_team_count,
+                    )
             matched_count += 1
     return matched_count
 
@@ -331,6 +365,9 @@ def _merge_late_results_into_competitions(
                 "score": "",
                 "authenticated_private_score": "",
                 "authenticated_private_submission_date": "",
+                "authenticated_private_rank": None,
+                "authenticated_private_top_percent": None,
+                "authenticated_private_rank_team_count": None,
                 "submission_date": "",
                 "medal_candidate": "unavailable",
                 "late_public_score": "",
@@ -418,7 +455,16 @@ def _team_board(
         for entry in competition["entries"]:  # type: ignore[index]
             team_name = str(entry["team_name"])  # type: ignore[index]
             slug = str(competition["slug"])
-            official_result = (
+            authenticated_private_result = (
+                (
+                    int(entry["authenticated_private_rank"]),  # type: ignore[index]
+                    float(entry["authenticated_private_top_percent"]),  # type: ignore[index]
+                )
+                if entry["authenticated_private_rank"] is not None  # type: ignore[index]
+                and entry["authenticated_private_top_percent"] is not None  # type: ignore[index]
+                else None
+            )
+            official_result = authenticated_private_result or (
                 (int(entry["rank"]), float(entry["top_percent"]))  # type: ignore[index]
                 if entry["rank"] is not None  # type: ignore[index]
                 else None
@@ -436,7 +482,10 @@ def _team_board(
             if mode == "ongoing":
                 selected_result = official_result
                 has_result = official_result is not None
-                submission_dates = (entry["submission_date"],)  # type: ignore[index]
+                submission_dates = (  # type: ignore[index]
+                    entry["authenticated_private_submission_date"]
+                    or entry["submission_date"],
+                )
             elif mode == "late":
                 selected_result = late_result
                 has_result = bool(entry["late_submission_date"])  # type: ignore[index]
@@ -456,7 +505,8 @@ def _team_board(
                     entry["late_submission_date"]
                 )
                 submission_dates = (  # type: ignore[index]
-                    entry["submission_date"],
+                    entry["authenticated_private_submission_date"]
+                    or entry["submission_date"],
                     entry["late_submission_date"],
                 )
             else:
@@ -628,7 +678,7 @@ def build_leaderboard(
     )
 
     return {
-        "schema_version": 8,
+        "schema_version": 9,
         "generated_at": _iso_utc(generated_at),
         "status": status,
         "summary": {
@@ -654,18 +704,24 @@ def build_leaderboard(
         "late_submissions": public_late_submissions,
         "visualizations": build_visualizations(public_competitions),
         "methodology": {
-            "rank": "Official Rank from Kaggle's complete leaderboard CSV.",
+            "rank": (
+                "Final authenticated Private Rank from each account's entered competition "
+                "metadata is preferred after the deadline; otherwise Rank comes from Kaggle's "
+                "complete leaderboard CSV."
+            ),
             "top_percent": (
-                "Each team contributes at most once per competition using its best official rank. "
-                "That rank is divided by the deduplicated number of teams in the leaderboard, "
-                "then multiplied by 100."
+                "Each team contributes at most once per competition using its preferred official "
+                "rank. Authenticated final Private Rank uses the account-visible team count; "
+                "otherwise Rank is divided by the deduplicated number of teams in the leaderboard. "
+                "The ratio is multiplied by 100."
             ),
             "score": "Score is preserved as text exactly as provided by Kaggle.",
             "authenticated_private_score": (
                 "After a competition ends, an authenticated pre-deadline submission's private "
-                "score is shown only when its public score uniquely matches the team's current "
-                "official public leaderboard score. No private rank is inferred from a public "
-                "leaderboard."
+                "score and final Private Rank are shown only when its public score uniquely "
+                "matches the team's current official public leaderboard score. The rank is read "
+                "from that authenticated account's entered competition metadata, never inferred "
+                "from a public leaderboard."
             ),
             "late_submission": (
                 "The best completed post-deadline result per team and competition, returned by "

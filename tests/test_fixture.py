@@ -52,6 +52,16 @@ class FixtureConsistencyTests(unittest.TestCase):
                             4,
                         ),
                     )
+                if entry["authenticated_private_rank"] is not None:
+                    self.assertEqual(
+                        entry["authenticated_private_top_percent"],
+                        round(
+                            entry["authenticated_private_rank"]
+                            / entry["authenticated_private_rank_team_count"]
+                            * 100,
+                            4,
+                        ),
+                    )
                 if entry["rank"] is None:
                     self.assertIsNone(entry["top_percent"])
                     self.assertEqual(entry["score"], "")
@@ -59,8 +69,12 @@ class FixtureConsistencyTests(unittest.TestCase):
                     self.assertEqual(entry["medal_candidate"], "unavailable")
                     continue
                 self.assertEqual(entry["top_percent"], round(entry["rank"] / team_count * 100, 4))
+                medal_rank = entry["authenticated_private_rank"] or entry["rank"]
+                medal_team_count = (
+                    entry["authenticated_private_rank_team_count"] or team_count
+                )
                 expected_medal = (
-                    medal_candidate(entry["rank"], team_count)
+                    medal_candidate(medal_rank, medal_team_count)
                     if competition["awards_points"]
                     else "not_eligible"
                 )
@@ -90,7 +104,15 @@ class FixtureConsistencyTests(unittest.TestCase):
                     )
                     if entry is None:
                         continue
-                    official_result = (
+                    authenticated_private_result = (
+                        (
+                            entry["authenticated_private_rank"],
+                            entry["authenticated_private_top_percent"],
+                        )
+                        if entry["authenticated_private_rank"] is not None
+                        else None
+                    )
+                    official_result = authenticated_private_result or (
                         (entry["rank"], entry["top_percent"])
                         if entry["rank"] is not None
                         else None
@@ -108,7 +130,10 @@ class FixtureConsistencyTests(unittest.TestCase):
                     if mode == "ongoing":
                         selected = official_result
                         has_result = official_result is not None
-                        relevant_dates = (entry["submission_date"],)
+                        relevant_dates = (
+                            entry["authenticated_private_submission_date"]
+                            or entry["submission_date"],
+                        )
                     elif mode == "late":
                         selected = late_result
                         has_result = bool(entry["late_submission_date"])
@@ -127,7 +152,8 @@ class FixtureConsistencyTests(unittest.TestCase):
                             entry["late_submission_date"]
                         )
                         relevant_dates = (
-                            entry["submission_date"],
+                            entry["authenticated_private_submission_date"]
+                            or entry["submission_date"],
                             entry["late_submission_date"],
                         )
                     submission_dates.extend(date for date in relevant_dates if date)

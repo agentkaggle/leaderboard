@@ -68,6 +68,9 @@ PUBLIC_KEYS = {
         "score",
         "authenticated_private_score",
         "authenticated_private_submission_date",
+        "authenticated_private_rank",
+        "authenticated_private_top_percent",
+        "authenticated_private_rank_team_count",
         "submission_date",
         "medal_candidate",
         "late_public_score",
@@ -112,6 +115,7 @@ PUBLIC_KEYS = {
         "result_kind",
         "rank_kind",
         "score_kind",
+        "result_time",
         "is_official",
         "provenance",
     },
@@ -173,6 +177,22 @@ def validate_public_payload(payload: dict[str, Any]) -> None:
                 PUBLIC_KEYS["entry"],
                 f"competitions[{competition_index}].entries[{entry_index}]",
             )
+            private_rank_values = (
+                entry["authenticated_private_rank"],
+                entry["authenticated_private_top_percent"],
+                entry["authenticated_private_rank_team_count"],
+            )
+            if any(value is not None for value in private_rank_values):
+                if any(value is None for value in private_rank_values):
+                    raise ValueError("Public payload has an incomplete authenticated private rank")
+                rank, top_percent, team_count = private_rank_values
+                if (
+                    not isinstance(rank, int)
+                    or not isinstance(team_count, int)
+                    or not 0 < rank <= team_count
+                    or not 0 <= float(top_percent) <= 100
+                ):
+                    raise ValueError("Public payload has an invalid authenticated private rank")
     for index, submission in enumerate(payload["late_submissions"]):
         _require_exact_keys(
             submission,
@@ -208,6 +228,7 @@ def validate_public_payload(payload: dict[str, Any]) -> None:
                 if result["rank_kind"] not in {
                     "official_public",
                     "official_private",
+                    "authenticated_private",
                     "late_estimate",
                 }:
                     raise ValueError("Public payload has an invalid visualization rank source")

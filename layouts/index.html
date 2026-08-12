@@ -252,12 +252,12 @@
                     <thead>
                       <tr class="score-groups">
                         <th scope="col" rowspan="2">团队</th>
-                        <th scope="colgroup" colspan="{{ if $showAuthenticatedPrivate }}6{{ else }}5{{ end }}">{{ if eq .leaderboard_kind "private" }}官方 Private LB{{ else if eq .leaderboard_kind "public" }}官方 Public LB{{ else }}官方榜单{{ end }}</th>
+                        <th scope="colgroup" colspan="{{ if $showAuthenticatedPrivate }}6{{ else }}5{{ end }}">{{ if eq .leaderboard_kind "private" }}官方 Private LB{{ else if $showAuthenticatedPrivate }}最终结果（Private 优先†）{{ else if eq .leaderboard_kind "public" }}官方 Public LB{{ else }}官方榜单{{ end }}</th>
                         <th scope="colgroup" colspan="5">赛后最佳*</th>
                       </tr>
                       <tr>
-                        <th scope="col">{{ if eq .leaderboard_kind "private" }}Private 位次{{ else if eq .leaderboard_kind "public" }}Public 位次{{ else }}位次{{ end }}</th>
-                        <th scope="col">{{ if eq .leaderboard_kind "private" }}Private Top%{{ else if eq .leaderboard_kind "public" }}Public Top%{{ else }}Top%{{ end }}</th>
+                        <th scope="col">{{ if eq .leaderboard_kind "private" }}Private 位次{{ else if $showAuthenticatedPrivate }}优先位次†{{ else if eq .leaderboard_kind "public" }}Public 位次{{ else }}位次{{ end }}</th>
+                        <th scope="col">{{ if eq .leaderboard_kind "private" }}Private Top%{{ else if $showAuthenticatedPrivate }}优先 Top%†{{ else if eq .leaderboard_kind "public" }}Public Top%{{ else }}Top%{{ end }}</th>
                         <th scope="col">{{ if eq .leaderboard_kind "private" }}Private Score{{ else if eq .leaderboard_kind "public" }}Public Score{{ else }}分数{{ end }}</th>
                         {{ if $showAuthenticatedPrivate }}<th scope="col">Private Score†</th>{{ end }}
                         <th scope="col">奖牌候选</th><th scope="col">提交时间</th>
@@ -268,8 +268,8 @@
                       {{ range .entries }}
                         <tr data-team="{{ .team_name }}">
                           <th scope="row"><span class="team-dot" aria-hidden="true"></span>{{ .team_name }}</th>
-                          <td>{{ if .rank }}<strong class="rank-number">#{{ .rank }}</strong><span class="rank-denominator"> / {{ $competition.leaderboard_team_count }}</span>{{ else }}—{{ end }}</td>
-                          <td>{{ if ne .top_percent nil }}<span class="percent-pill">Top {{ lang.FormatNumberCustom 2 .top_percent }}%</span>{{ else }}—{{ end }}</td>
+                          <td>{{ if .authenticated_private_rank }}<strong class="rank-number">#{{ .authenticated_private_rank }}</strong><span class="rank-denominator"> / {{ .authenticated_private_rank_team_count }}</span><small class="table-source">Private Rank</small>{{ else if .rank }}<strong class="rank-number">#{{ .rank }}</strong><span class="rank-denominator"> / {{ $competition.leaderboard_team_count }}</span>{{ if $showAuthenticatedPrivate }}<small class="table-source">Public Rank</small>{{ end }}{{ else }}—{{ end }}</td>
+                          <td>{{ if ne .authenticated_private_top_percent nil }}<span class="percent-pill">Top {{ lang.FormatNumberCustom 2 .authenticated_private_top_percent }}%</span><small class="table-source">Private Rank</small>{{ else if ne .top_percent nil }}<span class="percent-pill">Top {{ lang.FormatNumberCustom 2 .top_percent }}%</span>{{ if $showAuthenticatedPrivate }}<small class="table-source">Public Rank</small>{{ end }}{{ else }}—{{ end }}</td>
                           <td><code class="score">{{ if .score }}{{ .score }}{{ else }}—{{ end }}</code></td>
                           {{ if $showAuthenticatedPrivate }}
                             <td class="authenticated-private-score">
@@ -297,7 +297,7 @@
               </article>
             {{ end }}
           </div>
-          <p class="score-source-note">† 比赛结束后，仅当授权账户提交的 Public Score 唯一匹配当前官方 Public Score 时展示对应 Private Score。Kaggle 正式 Private LB 发布前，不推断 Private 位次。</p>
+          <p class="score-source-note">† 比赛结束后，仅当授权账户提交的 Public Score 唯一匹配当前官方 Public Score 时展示对应 Private Score；最终 Private Rank 直接读取该账户的 Kaggle entered competition 元数据，不从 Public 榜推断。</p>
           <div id="filter-empty" class="filter-empty" hidden>没有符合当前筛选条件的比赛。</div>
         </section>
 
@@ -309,7 +309,7 @@
           <div class="method-grid">
             <article><span>01</span><h3>官方名次</h3><p>直接读取 Kaggle 完整 leaderboard CSV 的 Rank 字段，不用数组下标推断。</p></article>
             <article><span>02</span><h3>Top 百分比</h3><p>官方 Rank ÷ 该 CSV 的有效行数 × 100；数值越小，排名越靠前。</p></article>
-            <article><span>03</span><h3>认证 Private Score</h3><p>比赛结束后，从参与者 token 的 My Submissions 匹配正式提交；只有 Public Score 唯一对应时才展示 Private Score，不据此推断 Private Rank。</p></article>
+            <article><span>03</span><h3>认证 Private 结果</h3><p>比赛结束后，从参与者 token 的 My Submissions 匹配正式提交；只有 Public Score 唯一对应时才展示 Private Score，并优先使用 entered 元数据中的最终 Private Rank。</p></article>
             <article><span>04</span><h3>奖牌候选</h3><p>仅在 Kaggle 标记该比赛会计入积分时，按 progression 位次区间估算。团队资格、DQ、最终验证与进行中榜单变化仍可能改变结果。</p></article>
           </div>
         </section>

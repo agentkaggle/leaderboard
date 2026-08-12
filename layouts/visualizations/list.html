@@ -123,6 +123,7 @@
                           data-result-kind="{{ .result_kind }}"
                           data-rank-kind="{{ .rank_kind }}"
                           data-score-kind="{{ .score_kind }}"
+                          data-result-time="{{ .result_time }}"
                           data-is-official="{{ .is_official }}"
                           data-provenance="{{ .provenance }}"
                         ></span>
@@ -134,12 +135,12 @@
                   <summary>查看数据表</summary>
                   <div class="table-wrap">
                     <table class="chart-data-table">
-                      <thead><tr><th scope="col">比赛</th><th scope="col">账号团队</th><th scope="col">Quantile</th><th scope="col">Top%</th><th scope="col">位次</th><th scope="col">分数</th><th scope="col">来源</th></tr></thead>
+                      <thead><tr><th scope="col">比赛</th><th scope="col">账号团队</th><th scope="col">Quantile</th><th scope="col">Top%</th><th scope="col">位次</th><th scope="col">分数</th><th scope="col">成绩时间</th><th scope="col">来源</th></tr></thead>
                       <tbody>
                         {{ range $group.competitions }}
                           {{ $competition := . }}
                           {{ with index .results 0 }}
-                            <tr><th scope="row">{{ $competition.title }}</th><td>{{ .team_name }}</td><td>{{ lang.FormatNumberCustom 2 .quantile }}</td><td>{{ lang.FormatNumberCustom 2 .top_percent }}%</td><td>#{{ .rank }} / {{ .leaderboard_team_count }}<small class="table-source">{{ if eq .rank_kind "official_private" }}Private Rank{{ else if eq .rank_kind "official_public" }}Public Rank{{ else }}Late 估算*{{ end }}</small></td><td><code class="score">{{ .score }}</code><small class="table-source">{{ if or (eq .score_kind "official_private") (eq .score_kind "authenticated_private") }}Private Score{{ else if eq .score_kind "late_private" }}Late Private{{ else if eq .score_kind "late_public" }}Late Public{{ else }}Public Score{{ end }}</small></td><td>{{ .provenance }}</td></tr>
+                            <tr><th scope="row">{{ $competition.title }}</th><td>{{ .team_name }}</td><td>{{ lang.FormatNumberCustom 2 .quantile }}</td><td>{{ lang.FormatNumberCustom 2 .top_percent }}%</td><td>#{{ .rank }} / {{ .leaderboard_team_count }}<small class="table-source">{{ if or (eq .rank_kind "official_private") (eq .rank_kind "authenticated_private") }}Private Rank{{ else if eq .rank_kind "official_public" }}Public Rank{{ else }}Late 估算*{{ end }}</small></td><td><code class="score">{{ .score }}</code><small class="table-source">{{ if or (eq .score_kind "official_private") (eq .score_kind "authenticated_private") }}Private Score{{ else if eq .score_kind "late_private" }}Late Private{{ else if eq .score_kind "late_public" }}Late Public{{ else }}Public Score{{ end }}</small></td><td>{{ with .result_time }}<time class="local-time" datetime="{{ . }}">{{ . }}</time>{{ else }}—{{ end }}</td><td>{{ .provenance }}</td></tr>
                           {{ end }}
                         {{ end }}
                       </tbody>
@@ -179,6 +180,7 @@
                           data-result-kind="{{ .result_kind }}"
                           data-rank-kind="{{ .rank_kind }}"
                           data-score-kind="{{ .score_kind }}"
+                          data-result-time="{{ .result_time }}"
                           data-is-official="{{ .is_official }}"
                           data-provenance="{{ .provenance }}"
                         ></span>
@@ -190,12 +192,12 @@
                   <summary>查看全部 {{ $group.result_count }} 条记录</summary>
                   <div class="table-wrap">
                     <table class="chart-data-table">
-                      <thead><tr><th scope="col">比赛</th><th scope="col">账号团队</th><th scope="col">Quantile</th><th scope="col">Top%</th><th scope="col">位次</th><th scope="col">分数</th><th scope="col">来源</th></tr></thead>
+                      <thead><tr><th scope="col">比赛</th><th scope="col">账号团队</th><th scope="col">Quantile</th><th scope="col">Top%</th><th scope="col">位次</th><th scope="col">分数</th><th scope="col">成绩时间</th><th scope="col">来源</th></tr></thead>
                       <tbody>
                         {{ range $group.competitions }}
                           {{ $competition := . }}
                           {{ range .results }}
-                            <tr><th scope="row">{{ $competition.title }}</th><td>{{ .team_name }}</td><td>{{ lang.FormatNumberCustom 2 .quantile }}</td><td>{{ lang.FormatNumberCustom 2 .top_percent }}%</td><td>#{{ .rank }} / {{ .leaderboard_team_count }}<small class="table-source">{{ if eq .rank_kind "official_private" }}Private Rank{{ else if eq .rank_kind "official_public" }}Public Rank{{ else }}Late 估算*{{ end }}</small></td><td><code class="score">{{ .score }}</code><small class="table-source">{{ if or (eq .score_kind "official_private") (eq .score_kind "authenticated_private") }}Private Score{{ else if eq .score_kind "late_private" }}Late Private{{ else if eq .score_kind "late_public" }}Late Public{{ else }}Public Score{{ end }}</small></td><td>{{ .provenance }}</td></tr>
+                            <tr><th scope="row">{{ $competition.title }}</th><td>{{ .team_name }}</td><td>{{ lang.FormatNumberCustom 2 .quantile }}</td><td>{{ lang.FormatNumberCustom 2 .top_percent }}%</td><td>#{{ .rank }} / {{ .leaderboard_team_count }}<small class="table-source">{{ if or (eq .rank_kind "official_private") (eq .rank_kind "authenticated_private") }}Private Rank{{ else if eq .rank_kind "official_public" }}Public Rank{{ else }}Late 估算*{{ end }}</small></td><td><code class="score">{{ .score }}</code><small class="table-source">{{ if or (eq .score_kind "official_private") (eq .score_kind "authenticated_private") }}Private Score{{ else if eq .score_kind "late_private" }}Late Private{{ else if eq .score_kind "late_public" }}Late Public{{ else }}Public Score{{ end }}</small></td><td>{{ with .result_time }}<time class="local-time" datetime="{{ . }}">{{ . }}</time>{{ else }}—{{ end }}</td><td>{{ .provenance }}</td></tr>
                           {{ end }}
                         {{ end }}
                       </tbody>
@@ -215,8 +217,8 @@
           <div class="method-grid">
             <article><span>01</span><h3>统一分位</h3><p>Quantile = 100 − Rank ÷ 有效榜单队伍数 × 100；不同原始指标可在同一坐标上比较。</p></article>
             <article><span>02</span><h3>进行中</h3><p>只使用当前官方 Public Leaderboard，不读取或推断尚未公开的 Private 排名。</p></article>
-            <article><span>03</span><h3>已完成</h3><p>已发布官方 Private Leaderboard 时固定优先使用 Private Rank 与 Score；否则保留 Public Rank，并优先显示已认证的 Private Score。空心标记表示 late 估算。</p></article>
-            <article><span>04</span><h3>自动覆盖</h3><p>公开榜单匹配配置团队与显式别名；授权 token 补充 entered 比赛、账号团队名、Private Score 与赛后结果。</p></article>
+            <article><span>03</span><h3>已完成</h3><p>优先使用已发布的 Private Rank 与 Score；授权账号的最终 Private Rank 来自 Kaggle entered 元数据，不从 Public 排名推断。空心标记表示 late 估算。</p></article>
+            <article><span>04</span><h3>自动覆盖</h3><p>公开榜单匹配配置团队与显式别名；授权 token 补充 entered 比赛、账号团队名、Private Rank / Score 与赛后结果。</p></article>
           </div>
         </section>
       {{ end }}
