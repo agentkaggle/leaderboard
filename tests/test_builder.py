@@ -462,17 +462,20 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(payload["late_teams"][0]["position"], 1)
         self.assertEqual(payload["ongoing_teams"][0]["name"], "Alpha")
 
-    def test_excluded_competitions_are_removed_from_all_public_results(self) -> None:
+    def test_only_explicitly_excluded_competitions_are_removed(self) -> None:
         excluded_slugs = (
             "restaurant-revenue-prediction2",
             "orbit-wars",
-            "arc-prize-2026-arc-agi-2",
             "ai-agent-security-multi-step-tool-attacks",
+        )
+        included_slugs = (
+            "included-competition",
+            "arc-prize-2026-arc-agi-2",
         )
 
         class ExcludedCompetitionSource:
             def list_competitions(self, max_competitions=None):
-                slugs = ("included-competition", *excluded_slugs)
+                slugs = (*included_slugs, *excluded_slugs)
                 competitions = [
                     Competition(
                         slug=slug,
@@ -522,17 +525,24 @@ class BuilderTests(unittest.TestCase):
             late_submission_account_count=1,
         )
 
-        self.assertEqual(
+        self.assertCountEqual(
             [competition["slug"] for competition in payload["competitions"]],
-            ["included-competition"],
+            list(included_slugs),
         )
         self.assertEqual(payload["late_submissions"], [])
-        self.assertEqual(payload["summary"]["matched_competition_count"], 1)
+        self.assertEqual(payload["summary"]["matched_competition_count"], 2)
         self.assertEqual(payload["summary"]["late_submission_competition_count"], 0)
         self.assertEqual(payload["summary"]["late_submission_count"], 0)
-        self.assertEqual(payload["teams"][0]["competition_count"], 1)
+        self.assertEqual(payload["teams"][0]["competition_count"], 2)
         self.assertEqual(payload["late_teams"][0]["competition_count"], 0)
-        self.assertEqual(payload["ongoing_teams"][0]["competition_count"], 1)
+        self.assertEqual(payload["ongoing_teams"][0]["competition_count"], 2)
+        self.assertIn(
+            "arc-prize-2026-arc-agi-2",
+            {
+                competition["slug"]
+                for competition in payload["visualizations"]["ongoing"]["competitions"]
+            },
+        )
         validate_public_payload(payload)
 
     def test_visualizations_split_states_and_keep_every_team_result(self) -> None:

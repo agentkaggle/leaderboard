@@ -33,7 +33,6 @@ MINIMUM_SCAN_SUCCESS_RATIO = 0.5
 EXCLUDED_COMPETITION_SLUGS = frozenset(
     {
         "ai-agent-security-multi-step-tool-attacks",
-        "arc-prize-2026-arc-agi-2",
         "orbit-wars",
         "restaurant-revenue-prediction2",
     }
