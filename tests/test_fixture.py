@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
+from agentkaggle_leaderboard.builder import _late_board, _ongoing_board
 from agentkaggle_leaderboard.medals import medal_candidate
 from agentkaggle_leaderboard.output import validate_public_payload
 from agentkaggle_leaderboard.visualizations import build_visualizations
@@ -21,9 +22,6 @@ class FixtureConsistencyTests(unittest.TestCase):
         self.entries = [
             entry for competition in self.competitions for entry in competition["entries"]
         ]
-
-    def team_entries(self, name: str) -> list[dict]:
-        return [entry for entry in self.entries if entry["team_name"] == name]
 
     def test_fixture_matches_the_published_schema(self) -> None:
         validate_public_payload(self.payload)
@@ -80,38 +78,24 @@ class FixtureConsistencyTests(unittest.TestCase):
                     medal_candidate(rank, count) if competition["awards_points"] else "not_eligible",
                 )
 
-    def test_ongoing_board_counts_medals_and_top_five_percent_results(self) -> None:
-        for position, team in enumerate(self.payload["ongoing_teams"], start=1):
-            entries = self.team_entries(team["name"])
-            for medal in ("gold", "silver", "bronze"):
-                self.assertEqual(
-                    team[f"{medal}_count"],
-                    sum(entry["medal_candidate"] == medal for entry in entries),
-                )
-            self.assertEqual(
-                team["medal_count"],
-                team["gold_count"] + team["silver_count"] + team["bronze_count"],
-            )
-            self.assertEqual(
-                team["top_percent_count"],
-                sum(
-                    (entry["authenticated_private_top_percent"] or entry["top_percent"] or 100)
-                    <= 5
-                    for entry in entries
-                ),
-            )
-            ranked = team["medal_count"] or team["top_percent_count"]
-            self.assertEqual(team["position"], position if ranked else None)
+    def test_both_boards_match_the_current_board_rules(self) -> None:
+        teams = tuple(team["name"] for team in self.payload["ongoing_teams"])
+        self.assertEqual(self.payload["ongoing_teams"], _ongoing_board(teams, self.competitions))
+        self.assertEqual(self.payload["late_teams"], _late_board(teams, self.competitions))
 
-    def test_late_board_counts_only_results_better_than_the_original_winner(self) -> None:
-        for position, team in enumerate(self.payload["late_teams"], start=1):
-            entries = self.team_entries(team["name"])
-            self.assertEqual(
-                team["beat_winner_count"],
-                sum(entry["late_beats_winner"] for entry in entries),
-            )
-            self.assertEqual(
-                team["position"], position if team["beat_winner_count"] else None
+    def test_boards_only_number_teams_with_a_counted_result(self) -> None:
+        for board, counted in (
+            ("ongoing_teams", lambda team: team["medal_count"] or team["top_percent_count"]),
+            ("late_teams", lambda team: team["beat_winner_count"]),
+        ):
+            positions = [team["position"] for team in self.payload[board] if counted(team)]
+            self.assertEqual(positions, list(range(1, len(positions) + 1)))
+            self.assertTrue(
+                all(
+                    team["position"] is None
+                    for team in self.payload[board]
+                    if not counted(team)
+                )
             )
 
     def test_every_late_submission_is_mirrored_into_its_competition(self) -> None:

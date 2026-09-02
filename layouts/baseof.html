@@ -33,7 +33,12 @@
   </header>
 
   <main id="main" class="shell">
-    {{ block "main" . }}{{ end }}
+    {{ with hugo.Data.leaderboard }}
+      {{ block "main" $ }}{{ end }}
+    {{ else }}
+      <h1>{{ site.Title }}</h1>
+      <p class="empty">尚未生成榜单数据。先运行 <code>uv run python -m agentkaggle_leaderboard</code>，再执行 Hugo 构建。</p>
+    {{ end }}
   </main>
 
   <footer class="site-footer">

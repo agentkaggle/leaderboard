@@ -114,7 +114,10 @@ table small { display: block; color: var(--muted); font-size: .7rem; }
 .chart-legend-initial { font-size: 7px; }
 .chart-interactive-mark { cursor: help; outline: none; }
 .chart-interactive-mark:hover, .chart-interactive-mark:focus { filter: brightness(.92); }
-.chart-team-highlight-ring { opacity: 0; pointer-events: none; }
+.chart-surface-fill { fill: var(--surface); }
+.chart-mark-official { stroke: var(--surface); stroke-width: 2; }
+.chart-mark-estimate { fill: var(--surface); stroke-width: 3; }
+.chart-team-highlight-ring { fill: none; stroke: var(--ink); stroke-width: 2; opacity: 0; pointer-events: none; }
 .chart-team-highlight-ring.chart-team-highlighted { opacity: 1; }
 .chart-legend-control { cursor: pointer; outline: none; }
 .chart-legend-control:hover circle, .chart-legend-control:focus circle, .chart-legend-selected circle { stroke: var(--ink); stroke-width: 2; }

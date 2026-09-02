@@ -13,7 +13,7 @@ from .kaggle_source import (
     KaggleAuthenticationError,
     UnsafePrivateLeaderboard,
 )
-from .medals import medal_candidate
+from .medals import MEDALS, medal_candidate
 from .models import (
     AuthenticatedSubmissionScoreEntry,
     Competition,
@@ -30,7 +30,6 @@ from .visualizations import build_visualizations
 ProgressCallback = Callable[[int, int], None]
 MINIMUM_SCAN_SUCCESS_RATIO = 0.5
 TOP_PERCENT_THRESHOLD = 5.0
-MEDALS = ("gold", "silver", "bronze")
 EXCLUDED_COMPETITION_SLUGS = frozenset(
     {
         "ai-agent-security-multi-step-tool-attacks",
@@ -296,6 +295,15 @@ def _merge_late_results_into_competitions(
     competitions_by_slug = {
         str(competition["slug"]): competition for competition in competitions
     }
+    # score_values keeps the leaderboard's rank order, so index 0 is the winner.
+    board_scores_by_slug = {
+        slug: [
+            score
+            for value in snapshot.score_values
+            if (score := _numeric_value(value)) is not None
+        ]
+        for slug, snapshot in snapshots.items()
+    }
 
     for late_submission in late_submissions:
         slug = str(late_submission["competition_slug"])
@@ -348,28 +356,29 @@ def _merge_late_results_into_competitions(
             ),
             None,
         )
+        board_scores = board_scores_by_slug.get(slug, ())
         if (
             snapshot is None
             or late_score is None
+            or not board_scores
             or snapshot.team_count <= 0
             or snapshot.score_order not in {"higher", "lower"}
         ):
             continue
 
-        # score_values is ordered by official rank, so the first value is the winner's.
-        board_scores = [
-            score for value in snapshot.score_values if (score := _numeric_value(value)) is not None
-        ]
-        if not board_scores:
-            continue
-        entry["late_beats_winner"] = _is_better(late_score, board_scores[0], snapshot.score_order)
+        order = snapshot.score_order
+        entry["late_beats_winner"] = _is_better(late_score, board_scores[0], order)
 
+        # The late score replaces the team's own official score in the distribution.
         official_score = _numeric_value(entry["score"])
-        if official_score is not None and official_score in board_scores:
-            board_scores.remove(official_score)
-        late_rank = 1 + sum(
-            _is_better(score, late_score, snapshot.score_order) for score in board_scores
-        )
+        better_count = sum(_is_better(score, late_score, order) for score in board_scores)
+        if (
+            official_score is not None
+            and official_score in board_scores
+            and _is_better(official_score, late_score, order)
+        ):
+            better_count -= 1
+        late_rank = better_count + 1
         entry["late_rank"] = late_rank
         entry["late_top_percent"] = round((late_rank / snapshot.team_count) * 100, 4)
         entry["late_rank_team_count"] = snapshot.team_count
@@ -384,20 +393,16 @@ def _merge_late_results_into_competitions(
         )
 
 
-def _official_top_percent(entry: dict[str, object]) -> float | None:
-    """The published Top%, preferring an authenticated final Private rank."""
-    for key in ("authenticated_private_top_percent", "top_percent"):
-        if entry[key] is not None:
-            return float(entry[key])  # type: ignore[arg-type]
-    return None
-
-
-def _ranked(summaries: list[dict[str, object]], sort_key: Callable[[dict], tuple]) -> list[dict]:
+def _ranked(
+    summaries: list[dict[str, object]],
+    sort_key: Callable[[dict], tuple],
+    is_ranked: Callable[[dict], bool],
+) -> list[dict[str, object]]:
     """Order a board and number only the teams that have something to rank."""
     ordered = sorted(summaries, key=sort_key)
     position = 0
     for summary in ordered:
-        if summary["position"] is not None:
+        if is_ranked(summary):
             position += 1
             summary["position"] = position
     return ordered
@@ -418,13 +423,14 @@ def _ongoing_board(
                 continue
             if entry["medal_candidate"] in MEDALS:
                 medals[team][entry["medal_candidate"]] += 1
-            top_percent = _official_top_percent(entry)
-            if top_percent is not None and top_percent <= TOP_PERCENT_THRESHOLD:
+            # An authenticated final Private rank replaces the Public one when known.
+            top_percent = entry["authenticated_private_top_percent"] or entry["top_percent"]
+            if top_percent is not None and float(top_percent) <= TOP_PERCENT_THRESHOLD:
                 top_percent_counts[team] += 1
 
     summaries = [
         {
-            "position": 0 if sum(medals[team].values()) or top_percent_counts[team] else None,
+            "position": None,
             "name": team,
             "gold_count": medals[team]["gold"],
             "silver_count": medals[team]["silver"],
@@ -443,6 +449,7 @@ def _ongoing_board(
             -int(summary["silver_count"]),
             str(summary["name"]).casefold(),
         ),
+        lambda summary: bool(summary["medal_count"] or summary["top_percent_count"]),
     )
 
 
@@ -460,7 +467,7 @@ def _late_board(
 
     summaries = [
         {
-            "position": 0 if beat_winner_counts[team] else None,
+            "position": None,
             "name": team,
             "beat_winner_count": beat_winner_counts[team],
         }
@@ -472,6 +479,7 @@ def _late_board(
             -int(summary["beat_winner_count"]),
             str(summary["name"]).casefold(),
         ),
+        lambda summary: bool(summary["beat_winner_count"]),
     )
 
 

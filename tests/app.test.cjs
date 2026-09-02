@@ -25,38 +25,25 @@ class FakeElement {
   }
 }
 
-const makeTimeElement = (className, dateTime) => ({
-  dateTime,
-  textContent: dateTime,
-  classList: { contains: (name) => name === className },
-});
-
 const makeCard = (dataset, teams) => {
   const card = new FakeElement(dataset);
-  const rows = teams.map((team) => new FakeElement({ team }));
-  card.querySelector = (selector) =>
-    rows.find((row) => selector === `[data-team="${row.dataset.team}"]`) || null;
-  card.querySelectorAll = (selector) => (selector === "tbody tr[data-team]" ? rows : []);
-  card.rows = rows;
+  card.rows = teams.map((team) => new FakeElement({ team }));
+  card.querySelectorAll = (selector) =>
+    selector === "tbody tr[data-team]" ? card.rows : [];
   return card;
 };
 
-const loadApp = (t, elements, cards, times = []) => {
+const loadApp = (t, elements, cards, times = {}) => {
   const controls = new Map(Object.entries(elements));
-  global.CSS = { escape: (value) => value };
   global.document = {
     querySelector: (selector) => controls.get(selector) || null,
     querySelectorAll: (selector) => {
       if (selector === ".competition") return cards;
-      if (selector === ".local-date, .local-time") return times;
-      return [];
+      return times[selector] || [];
     },
     createElement: () => new FakeElement(),
   };
-  t.after(() => {
-    delete global.document;
-    delete global.CSS;
-  });
+  t.after(() => delete global.document);
 
   const appPath = path.resolve(__dirname, "../assets/js/app.js");
   delete require.cache[require.resolve(appPath)];
@@ -87,17 +74,21 @@ const filterFixture = (t) => {
 };
 
 test("timestamps are rendered in the reader's locale", (t) => {
-  const times = [
-    makeTimeElement("local-date", "2026-07-16T08:42:00Z"),
-    makeTimeElement("local-time", "2026-07-16T08:42:00Z"),
-    makeTimeElement("local-date", "not-a-date"),
-  ];
+  const times = {
+    ".local-date": [
+      { dateTime: "2026-07-16T08:42:00Z", textContent: "" },
+      { dateTime: "not-a-date", textContent: "" },
+    ],
+    ".local-time": [{ dateTime: "2026-07-16T08:42:00Z", textContent: "" }],
+  };
   loadApp(t, {}, [], times);
 
-  assert.match(times[0].textContent, /2026/u);
-  assert.match(times[1].textContent, /2026/u);
-  assert.ok(times[1].textContent.length > times[0].textContent.length);
-  assert.equal(times[2].textContent, "not-a-date");
+  const [date, invalid] = times[".local-date"];
+  const [time] = times[".local-time"];
+  assert.match(date.textContent, /2026/u);
+  assert.match(time.textContent, /2026/u);
+  assert.ok(time.textContent.length > date.textContent.length);
+  assert.equal(invalid.textContent, "not-a-date");
 });
 
 test("the category filter is built from the rendered competitions", (t) => {

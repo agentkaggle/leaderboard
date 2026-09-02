@@ -3,169 +3,157 @@
   <h1>Kaggle Team Radar</h1>
   <p class="lede">从授权账户识别 team，扫描 Kaggle 可访问比赛。Ongoing 榜只统计正式参赛的奖牌候选区与 Top 5% 场次，Late 榜只统计赛后提交超越原赛事第一名的场次；两个榜单互不合并。</p>
 
-  {{ if not $data }}
-    <p class="empty">尚未生成榜单数据。先运行 <code>uv run python -m agentkaggle_leaderboard</code>，再执行 Hugo 构建。</p>
-  {{ else }}
-    {{ partial "notice.html" $data }}
+  {{ partial "notice.html" $data }}
 
-    <dl class="stats">
-      <div><dt>有结果比赛</dt><dd>{{ $data.summary.matched_competition_count }}</dd></div>
-      <div><dt>比赛团队记录</dt><dd>{{ $data.summary.participation_count }}</dd></div>
-      <div><dt>扫描覆盖</dt><dd>{{ $data.summary.scanned_competition_count }} / {{ $data.summary.discovered_competition_count }}</dd></div>
-      <div><dt>赛后最佳结果</dt><dd>{{ $data.summary.late_submission_count }}</dd></div>
-    </dl>
+  {{ partial "stats.html" (slice
+    (dict "label" "有结果比赛" "value" $data.summary.matched_competition_count)
+    (dict "label" "比赛团队记录" "value" $data.summary.participation_count)
+    (dict "label" "扫描覆盖" "value" (printf "%v / %v" $data.summary.scanned_competition_count $data.summary.discovered_competition_count))
+    (dict "label" "赛后最佳结果" "value" $data.summary.late_submission_count)) }}
 
-    <section aria-labelledby="ongoing-board-title">
-      <h2 id="ongoing-board-title">Ongoing 榜 · 正式参赛</h2>
-      <p class="note">只统计正式参赛成绩：分别计金、银、铜牌候选区场次与 Top 5% 场次。先比奖牌合计，再比 Top 5% 场次。</p>
-      <div class="table-wrap">
-        <table class="board">
-          <thead>
-            <tr><th scope="col">#</th><th scope="col">团队</th><th scope="col">金</th><th scope="col">银</th><th scope="col">铜</th><th scope="col">奖牌合计</th><th scope="col">Top 5%</th></tr>
-          </thead>
-          <tbody>
-            {{ range $data.ongoing_teams }}
-              <tr>
-                <td>{{ with .position }}{{ . }}{{ else }}—{{ end }}</td>
-                <th scope="row">{{ .name }}</th>
-                <td>{{ .gold_count }}</td>
-                <td>{{ .silver_count }}</td>
-                <td>{{ .bronze_count }}</td>
-                <td><strong>{{ .medal_count }}</strong></td>
-                <td>{{ .top_percent_count }}</td>
-              </tr>
-            {{ end }}
-          </tbody>
-        </table>
-      </div>
-    </section>
+  <section aria-labelledby="ongoing-board-title">
+    <h2 id="ongoing-board-title">Ongoing 榜 · 正式参赛</h2>
+    <p class="note">只统计正式参赛成绩：分别计金、银、铜牌候选区场次与 Top 5% 场次。先比奖牌合计，再比 Top 5% 场次。</p>
+    <div class="table-wrap">
+      <table class="board">
+        <thead>
+          <tr><th scope="col">#</th><th scope="col">团队</th><th scope="col">金</th><th scope="col">银</th><th scope="col">铜</th><th scope="col">奖牌合计</th><th scope="col">Top 5%</th></tr>
+        </thead>
+        <tbody>
+          {{ range $data.ongoing_teams }}
+            <tr>
+              <td>{{ with .position }}{{ . }}{{ else }}—{{ end }}</td>
+              <th scope="row">{{ .name }}</th>
+              <td>{{ .gold_count }}</td>
+              <td>{{ .silver_count }}</td>
+              <td>{{ .bronze_count }}</td>
+              <td><strong>{{ .medal_count }}</strong></td>
+              <td>{{ .top_percent_count }}</td>
+            </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+  </section>
 
-    <section aria-labelledby="late-board-title">
-      <h2 id="late-board-title">Late 榜 · 赛后提交</h2>
-      <p class="note">只统计赛后提交分数严格优于该比赛原第一名的场次，并据此排序；不计平均、位次或其他汇总。</p>
-      <div class="table-wrap">
-        <table class="board">
-          <thead>
-            <tr><th scope="col">#</th><th scope="col">团队</th><th scope="col">超越原第一名</th></tr>
-          </thead>
-          <tbody>
-            {{ range $data.late_teams }}
-              <tr>
-                <td>{{ with .position }}{{ . }}{{ else }}—{{ end }}</td>
-                <th scope="row">{{ .name }}</th>
-                <td><strong>{{ .beat_winner_count }}</strong></td>
-              </tr>
-            {{ end }}
-          </tbody>
-        </table>
-      </div>
-    </section>
+  <section aria-labelledby="late-board-title">
+    <h2 id="late-board-title">Late 榜 · 赛后提交</h2>
+    <p class="note">只统计赛后提交分数严格优于该比赛原第一名的场次，并据此排序；不计平均、位次或其他汇总。</p>
+    <div class="table-wrap">
+      <table class="board">
+        <thead>
+          <tr><th scope="col">#</th><th scope="col">团队</th><th scope="col">超越原第一名</th></tr>
+        </thead>
+        <tbody>
+          {{ range $data.late_teams }}
+            <tr>
+              <td>{{ with .position }}{{ . }}{{ else }}—{{ end }}</td>
+              <th scope="row">{{ .name }}</th>
+              <td><strong>{{ .beat_winner_count }}</strong></td>
+            </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+  </section>
 
-    <section aria-labelledby="competitions-title">
-      <h2 id="competitions-title">比赛明细</h2>
+  <section aria-labelledby="competitions-title">
+    <h2 id="competitions-title">比赛明细</h2>
 
-      <div class="filters">
-        <label><span class="sr-only">搜索比赛或团队</span><input id="search" type="search" placeholder="搜索比赛或团队…" autocomplete="off"></label>
-        <label><span>团队</span><select id="team-filter"><option value="">全部</option>{{ range $data.ongoing_teams }}<option value="{{ .name }}">{{ .name }}</option>{{ end }}</select></label>
-        <label><span>类别</span><select id="category-filter"><option value="">全部</option></select></label>
-        <label><span>状态</span><select id="state-filter"><option value="">全部</option><option value="active">进行中</option><option value="ended">已结束</option></select></label>
-        <p id="result-count" aria-live="polite">共 {{ $data.summary.matched_competition_count }} 场</p>
-      </div>
+    {{ $teams := slice }}
+    {{ range $data.competitions }}{{ range .entries }}{{ $teams = $teams | append .team_name }}{{ end }}{{ end }}
+    <div class="filters">
+      <label><span class="sr-only">搜索比赛或团队</span><input id="search" type="search" placeholder="搜索比赛或团队…" autocomplete="off"></label>
+      <label><span>团队</span><select id="team-filter"><option value="">全部</option>{{ range $teams | uniq | sort }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select></label>
+      <label><span>类别</span><select id="category-filter"><option value="">全部</option></select></label>
+      <label><span>状态</span><select id="state-filter"><option value="">全部</option><option value="active">进行中</option><option value="ended">已结束</option></select></label>
+      <p id="result-count" aria-live="polite">共 {{ $data.summary.matched_competition_count }} 场</p>
+    </div>
 
-      {{ range $data.competitions }}
-        {{ $private := eq .leaderboard_kind "private" }}
-        {{ $preferPrivate := and (eq .leaderboard_kind "public") (eq .state "ended") }}
-        {{ $teamCount := .leaderboard_team_count }}
-        {{ $hasOfficial := false }}
-        {{ $hasLate := false }}
-        {{ range .entries }}
-          {{ if .rank }}{{ $hasOfficial = true }}{{ end }}
-          {{ if .late_submission_date }}{{ $hasLate = true }}{{ end }}
+    {{ range $data.competitions }}
+      {{ $private := eq .leaderboard_kind "private" }}
+      {{ $preferPrivate := and (eq .leaderboard_kind "public") (eq .state "ended") }}
+      {{ $teamCount := .leaderboard_team_count }}
+      {{ $official := where .entries "rank" "!=" nil }}
+      {{ $late := where .entries "late_submission_date" "!=" "" }}
+      <article class="competition" data-title="{{ .title | lower }}" data-category="{{ .category }}" data-state="{{ .state }}" data-teams="{{ range .entries }}{{ .team_name | lower }}|{{ end }}">
+        <h3><a href="{{ .url }}" target="_blank" rel="noopener noreferrer">{{ .title }}</a></h3>
+        <p class="meta">
+          <span class="tag tag-{{ .state }}">{{ if eq .state "active" }}进行中{{ else if eq .state "ended" }}已结束{{ else }}状态未知{{ end }}</span>
+          <span class="tag">{{ .category }}</span>
+          <span class="tag">{{ if $private }}Private LB{{ else if eq .leaderboard_kind "public" }}Public LB{{ else }}无官方榜单{{ end }}</span>
+          {{ if gt $teamCount 0 }}{{ $teamCount }} 支有效榜单队伍{{ else }}官方榜单队伍数不可用{{ end }}{{ with .deadline }} · 截止 <time class="local-date" datetime="{{ . }}">{{ . }}</time>{{ end }}{{ with .reward }} · {{ . }}{{ end }}
+        </p>
+
+        {{ with $official }}
+          <div class="table-wrap">
+            <table>
+              <caption>正式成绩 · {{ if $private }}官方 Private LB{{ else if $preferPrivate }}官方 Public LB，认证 Private 结果优先†{{ else }}官方 Public LB{{ end }}</caption>
+              <thead>
+                <tr><th scope="col">团队</th><th scope="col">位次</th><th scope="col">Top%</th><th scope="col">分数</th><th scope="col">奖牌候选</th><th scope="col">提交时间</th></tr>
+              </thead>
+              <tbody>
+                {{ range . }}
+                  <tr data-team="{{ .team_name }}">
+                    <th scope="row">{{ .team_name }}</th>
+                    <td>
+                      {{ if .authenticated_private_rank }}{{ .authenticated_private_rank }}<span class="muted"> / {{ .authenticated_private_rank_team_count }}</span><small>Private Rank</small>
+                      {{ else }}{{ .rank }}<span class="muted"> / {{ $teamCount }}</span>{{ if $preferPrivate }}<small>Public Rank</small>{{ end }}{{ end }}
+                    </td>
+                    <td>{{ lang.FormatNumberCustom 2 (or .authenticated_private_top_percent .top_percent) }}%</td>
+                    <td>
+                      {{ if .authenticated_private_score }}<code>{{ .authenticated_private_score }}</code><small>Private Score†</small>{{ with .score }}<small>Public {{ . }}</small>{{ end }}
+                      {{ else }}<code>{{ .score }}</code>{{ end }}
+                    </td>
+                    <td>
+                      {{ $medal := index (dict "gold" "金牌区" "silver" "银牌区" "bronze" "铜牌区") .medal_candidate }}
+                      {{ if $medal }}<span class="medal {{ .medal_candidate }}">{{ $medal }}</span>
+                      {{ else if eq .medal_candidate "not_eligible" }}<span class="muted">不计奖牌</span>
+                      {{ else }}<span class="muted">—</span>{{ end }}
+                    </td>
+                    <td>{{ with or .authenticated_private_submission_date .submission_date }}<time class="local-date" datetime="{{ . }}">{{ . }}</time>{{ else }}—{{ end }}</td>
+                  </tr>
+                {{ end }}
+              </tbody>
+            </table>
+          </div>
         {{ end }}
-        <article class="competition" data-title="{{ .title | lower }}" data-category="{{ .category }}" data-state="{{ .state }}" data-teams="{{ range .entries }}{{ .team_name | lower }}|{{ end }}">
-          <h3><a href="{{ .url }}" target="_blank" rel="noopener noreferrer">{{ .title }}</a></h3>
-          <p class="meta">
-            <span class="tag tag-{{ .state }}">{{ if eq .state "active" }}进行中{{ else if eq .state "ended" }}已结束{{ else }}状态未知{{ end }}</span>
-            <span class="tag">{{ .category }}</span>
-            <span class="tag">{{ if $private }}Private LB{{ else if eq .leaderboard_kind "public" }}Public LB{{ else }}无官方榜单{{ end }}</span>
-            {{ if gt $teamCount 0 }}{{ $teamCount }} 支有效榜单队伍{{ else }}官方榜单队伍数不可用{{ end }}{{ with .deadline }} · 截止 <time class="local-date" datetime="{{ . }}">{{ . }}</time>{{ end }}{{ with .reward }} · {{ . }}{{ end }}
-          </p>
 
-          {{ if $hasOfficial }}
-            <div class="table-wrap">
-              <table>
-                <caption>正式成绩 · {{ if $private }}官方 Private LB{{ else if $preferPrivate }}官方 Public LB，认证 Private 结果优先†{{ else }}官方 Public LB{{ end }}</caption>
-                <thead>
-                  <tr><th scope="col">团队</th><th scope="col">位次</th><th scope="col">Top%</th><th scope="col">分数</th><th scope="col">奖牌候选</th><th scope="col">提交时间</th></tr>
-                </thead>
-                <tbody>
-                  {{ range .entries }}
-                    {{ if .rank }}
-                      <tr data-team="{{ .team_name }}">
-                        <th scope="row">{{ .team_name }}</th>
-                        <td>
-                          {{ if .authenticated_private_rank }}{{ .authenticated_private_rank }}<span class="muted"> / {{ .authenticated_private_rank_team_count }}</span><small>Private Rank</small>
-                          {{ else }}{{ .rank }}<span class="muted"> / {{ $teamCount }}</span>{{ if $preferPrivate }}<small>Public Rank</small>{{ end }}{{ end }}
-                        </td>
-                        <td>{{ with .authenticated_private_top_percent }}{{ lang.FormatNumberCustom 2 . }}%{{ else }}{{ lang.FormatNumberCustom 2 .top_percent }}%{{ end }}</td>
-                        <td>
-                          {{ if .authenticated_private_score }}<code>{{ .authenticated_private_score }}</code><small>Private Score†</small>{{ with .score }}<small>Public {{ . }}</small>{{ end }}
-                          {{ else }}<code>{{ .score }}</code>{{ end }}
-                        </td>
-                        <td>
-                          {{ if eq .medal_candidate "gold" }}<span class="medal gold">金牌区</span>
-                          {{ else if eq .medal_candidate "silver" }}<span class="medal silver">银牌区</span>
-                          {{ else if eq .medal_candidate "bronze" }}<span class="medal bronze">铜牌区</span>
-                          {{ else if eq .medal_candidate "not_eligible" }}<span class="muted">不计奖牌</span>
-                          {{ else }}<span class="muted">—</span>{{ end }}
-                        </td>
-                        <td>{{ $date := or .authenticated_private_submission_date .submission_date }}{{ with $date }}<time class="local-date" datetime="{{ . }}">{{ . }}</time>{{ else }}—{{ end }}</td>
-                      </tr>
-                    {{ end }}
-                  {{ end }}
-                </tbody>
-              </table>
-            </div>
-          {{ end }}
+        {{ with $late }}
+          <div class="table-wrap">
+            <table>
+              <caption>赛后提交 · 不属于官方榜单</caption>
+              <thead>
+                <tr><th scope="col">团队</th><th scope="col">超越原第一名</th><th scope="col">Public Score</th><th scope="col">Private Score</th><th scope="col">推算位次*</th><th scope="col">推算 Top%*</th><th scope="col">提交时间</th></tr>
+              </thead>
+              <tbody>
+                {{ range . }}
+                  <tr data-team="{{ .team_name }}">
+                    <th scope="row">{{ .team_name }}</th>
+                    <td>{{ if .late_beats_winner }}<span class="beat">是</span>{{ else }}<span class="muted">否</span>{{ end }}</td>
+                    <td>{{ with .late_public_score }}<code>{{ . }}</code>{{ else }}<span class="muted">—</span>{{ end }}</td>
+                    <td>{{ with .late_private_score }}<code>{{ . }}</code>{{ else }}<span class="muted">—</span>{{ end }}</td>
+                    <td>{{ if .late_rank }}{{ .late_rank }}<span class="muted"> / {{ .late_rank_team_count }}</span>{{ else }}<span class="muted">—</span>{{ end }}</td>
+                    <td>{{ with .late_top_percent }}{{ lang.FormatNumberCustom 2 . }}%{{ else }}<span class="muted">—</span>{{ end }}</td>
+                    <td><time class="local-date" datetime="{{ .late_submission_date }}">{{ .late_submission_date }}</time></td>
+                  </tr>
+                {{ end }}
+              </tbody>
+            </table>
+          </div>
+        {{ end }}
+      </article>
+    {{ end }}
+    <p id="filter-empty" class="empty" hidden>没有符合筛选条件的比赛。</p>
+  </section>
 
-          {{ if $hasLate }}
-            <div class="table-wrap">
-              <table>
-                <caption>赛后提交 · 不属于官方榜单</caption>
-                <thead>
-                  <tr><th scope="col">团队</th><th scope="col">超越原第一名</th><th scope="col">Public Score</th><th scope="col">Private Score</th><th scope="col">推算位次*</th><th scope="col">推算 Top%*</th><th scope="col">提交时间</th></tr>
-                </thead>
-                <tbody>
-                  {{ range .entries }}
-                    {{ if .late_submission_date }}
-                      <tr data-team="{{ .team_name }}">
-                        <th scope="row">{{ .team_name }}</th>
-                        <td>{{ if .late_beats_winner }}<span class="beat">是</span>{{ else }}<span class="muted">否</span>{{ end }}</td>
-                        <td>{{ with .late_public_score }}<code>{{ . }}</code>{{ else }}<span class="muted">—</span>{{ end }}</td>
-                        <td>{{ with .late_private_score }}<code>{{ . }}</code>{{ else }}<span class="muted">—</span>{{ end }}</td>
-                        <td>{{ if .late_rank }}{{ .late_rank }}<span class="muted"> / {{ .late_rank_team_count }}</span>{{ else }}<span class="muted">—</span>{{ end }}</td>
-                        <td>{{ with .late_top_percent }}{{ lang.FormatNumberCustom 2 . }}%{{ else }}<span class="muted">—</span>{{ end }}</td>
-                        <td><time class="local-date" datetime="{{ .late_submission_date }}">{{ .late_submission_date }}</time></td>
-                      </tr>
-                    {{ end }}
-                  {{ end }}
-                </tbody>
-              </table>
-            </div>
-          {{ end }}
-        </article>
-      {{ end }}
-      <p id="filter-empty" class="empty" hidden>没有符合筛选条件的比赛。</p>
-    </section>
-
-    <section class="methodology" aria-labelledby="method-title">
-      <h2 id="method-title">口径与边界</h2>
-      <dl>
-        <dt>官方位次</dt><dd>直接读取 Kaggle 完整 leaderboard CSV 的 Rank，Top% = Rank ÷ 该榜单有效队伍数 × 100。</dd>
-        <dt>认证 Private 结果†</dt><dd>比赛结束后，仅当授权账户提交的 Public Score 唯一匹配官方 Public Score 时展示对应 Private Score；最终 Private Rank 读自该账户的 entered competition 元数据，不从 Public 榜推断。</dd>
-        <dt>奖牌候选</dt><dd>仅在 Kaggle 标记该比赛计入积分时，按 progression 位次区间估算；团队资格、DQ、最终验证与进行中榜单变化都可能改变结果。</dd>
-        <dt>赛后提交*</dt><dd>截止后完成的提交，不是官方成绩。推算位次是把赛后分数与完整榜单分数分布比较得到的估计；“超越原第一名”表示该分数严格优于原榜单第一名的分数。</dd>
-      </dl>
-    </section>
-  {{ end }}
+  <section class="methodology" aria-labelledby="method-title">
+    <h2 id="method-title">口径与边界</h2>
+    <dl>
+      <dt>官方位次</dt><dd>直接读取 Kaggle 完整 leaderboard CSV 的 Rank，Top% = Rank ÷ 该榜单有效队伍数 × 100。</dd>
+      <dt>认证 Private 结果†</dt><dd>比赛结束后，仅当授权账户提交的 Public Score 唯一匹配官方 Public Score 时展示对应 Private Score；最终 Private Rank 读自该账户的 entered competition 元数据，不从 Public 榜推断。</dd>
+      <dt>奖牌候选</dt><dd>仅在 Kaggle 标记该比赛计入积分时，按 progression 位次区间估算；团队资格、DQ、最终验证与进行中榜单变化都可能改变结果。</dd>
+      <dt>赛后提交*</dt><dd>截止后完成的提交，不是官方成绩。推算位次是把赛后分数与完整榜单分数分布比较得到的估计；“超越原第一名”表示该分数严格优于原榜单第一名的分数。</dd>
+    </dl>
+  </section>
 {{ end }}

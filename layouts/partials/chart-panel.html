@@ -1,34 +1,22 @@
 {{/* One chart panel plus its data table. Expects: group, state, type, scale, index, title, subtitle, best. */}}
 {{ $best := .best }}
 {{ $id := printf "%s-%s" .state .type }}
+{{ $rankLabels := dict "official_public" "Public Rank" "official_private" "Private Rank" "authenticated_private" "Private Rank" "late_estimate" "Late 估算*" }}
+{{ $scoreLabels := dict "official_public" "Public Score" "official_private" "Private Score" "authenticated_private" "Private Score" "late_public" "Late Public" "late_private" "Late Private" }}
 <article class="panel" aria-labelledby="{{ $id }}-title">
   <header>
     <h3 id="{{ $id }}-title"><span class="index">{{ .index }}</span> {{ .title }}</h3>
     <p>{{ .subtitle }}</p>
   </header>
-  <div class="chart-mount" data-chart-type="{{ .type }}" data-chart-state="{{ .state }}" data-chart-scale="{{ .scale }}" data-chart-title="{{ .title }}">
-    <div class="chart-dataset" hidden>
-      {{ range .group.competitions }}
-        {{ $competition := . }}
-        {{ range (cond $best (first 1 .results) .results) }}
-          <span class="chart-datum"
-            data-competition="{{ $competition.title }}"
-            data-team="{{ .team_name }}"
-            data-rank="{{ .rank }}"
-            data-team-count="{{ .leaderboard_team_count }}"
-            data-top-percent="{{ .top_percent }}"
-            data-quantile="{{ .quantile }}"
-            data-score="{{ .score }}"
-            data-result-kind="{{ .result_kind }}"
-            data-rank-kind="{{ .rank_kind }}"
-            data-score-kind="{{ .score_kind }}"
-            data-result-time="{{ .result_time }}"
-            data-is-official="{{ .is_official }}"
-            data-provenance="{{ .provenance }}"></span>
-        {{ end }}
-      {{ end }}
-    </div>
-  </div>
+  <div
+    class="chart-mount"
+    data-chart-type="{{ .type }}"
+    data-chart-state="{{ .state }}"
+    data-chart-scale="{{ .scale }}"
+    data-chart-best="{{ .best }}"
+    data-chart-source="chart-data-{{ .state }}"
+    data-chart-title="{{ .title }}"
+  ></div>
   <details>
     <summary>查看数据表</summary>
     <div class="table-wrap">
@@ -43,8 +31,8 @@
                 <td>{{ .team_name }}</td>
                 <td>{{ lang.FormatNumberCustom 2 .quantile }}</td>
                 <td>{{ lang.FormatNumberCustom 2 .top_percent }}%</td>
-                <td>{{ .rank }}<span class="muted"> / {{ .leaderboard_team_count }}</span><small>{{ if eq .rank_kind "late_estimate" }}Late 估算*{{ else if eq .rank_kind "official_public" }}Public Rank{{ else }}Private Rank{{ end }}</small></td>
-                <td><code>{{ .score }}</code><small>{{ if eq .score_kind "late_private" }}Late Private{{ else if eq .score_kind "late_public" }}Late Public{{ else if eq .score_kind "official_public" }}Public Score{{ else }}Private Score{{ end }}</small></td>
+                <td>{{ .rank }}<span class="muted"> / {{ .leaderboard_team_count }}</span><small>{{ index $rankLabels .rank_kind | default "Rank" }}</small></td>
+                <td><code>{{ .score }}</code><small>{{ index $scoreLabels .score_kind | default "Score" }}</small></td>
                 <td><time class="local-time" datetime="{{ .result_time }}">{{ .result_time }}</time></td>
                 <td class="muted">{{ .provenance }}</td>
               </tr>

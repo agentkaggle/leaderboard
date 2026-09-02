@@ -7,20 +7,21 @@ GROUP_KEYS = ("ongoing", "completed")
 
 
 def _result(
-    entry: dict[str, Any],
+    team_name: str,
     *,
     rank: Any,
     team_count: Any,
     top_percent: Any,
     score: str,
-    kinds: tuple[str, str, str],
+    result_kind: str,
+    rank_kind: str,
+    score_kind: str,
     result_time: str,
     provenance: str,
 ) -> dict[str, object]:
-    result_kind, rank_kind, score_kind = kinds
     top_percent = float(top_percent)
     return {
-        "team_name": str(entry["team_name"]),
+        "team_name": team_name,
         "rank": int(rank),
         "leaderboard_team_count": int(team_count),
         "top_percent": top_percent,
@@ -50,16 +51,19 @@ def _official_result(
     private_score = str(entry["authenticated_private_score"] or "")
 
     if competition["state"] == "active":
-        kinds = ("official_current", "official_public", "official_public")
+        result_kind = "official_current"
+        rank_kind = score_kind = "official_public"
         provenance = "Official current Public rank and score"
     elif competition["leaderboard_kind"] == "private":
-        kinds = ("official_final", "official_private", "official_private")
+        result_kind = "official_final"
+        rank_kind = score_kind = "official_private"
         provenance = "Official final Private rank and score"
     elif not private_score:
-        kinds = ("official_public", "official_public", "official_public")
+        result_kind = rank_kind = score_kind = "official_public"
         provenance = "Official Public rank and score at snapshot"
     else:
         score = private_score
+        score_kind = "authenticated_private"
         result_time = str(entry["authenticated_private_submission_date"] or result_time)
         private_rank = (
             entry["authenticated_private_rank"],
@@ -68,19 +72,22 @@ def _official_result(
         )
         if all(value is not None for value in private_rank):
             rank, top_percent, team_count = private_rank
-            kinds = ("official_final", "authenticated_private", "authenticated_private")
+            result_kind = "official_final"
+            rank_kind = "authenticated_private"
             provenance = "Authenticated final Private rank and score"
         else:
-            kinds = ("official_public", "official_public", "authenticated_private")
+            result_kind = rank_kind = "official_public"
             provenance = "Official Public rank with authenticated Private score"
 
     return _result(
-        entry,
+        str(entry["team_name"]),
         rank=rank,
         team_count=team_count,
         top_percent=top_percent,
         score=score,
-        kinds=kinds,
+        result_kind=result_kind,
+        rank_kind=rank_kind,
+        score_kind=score_kind,
         result_time=result_time,
         provenance=provenance,
     )
@@ -96,16 +103,14 @@ def _late_result(entry: dict[str, Any]) -> dict[str, object] | None:
         return None
 
     return _result(
-        entry,
+        str(entry["team_name"]),
         rank=rank,
         team_count=team_count,
         top_percent=top_percent,
         score=score,
-        kinds=(
-            "late_estimate",
-            "late_estimate",
-            "late_private" if private_score else "late_public",
-        ),
+        result_kind="late_estimate",
+        rank_kind="late_estimate",
+        score_kind="late_private" if private_score else "late_public",
         result_time=str(entry["late_submission_date"] or ""),
         provenance=(
             "Late Private score rank estimate"

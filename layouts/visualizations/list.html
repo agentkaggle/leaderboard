@@ -3,48 +3,45 @@
   <h1>比赛成绩分布</h1>
   <p class="lede">统一使用 Quantile = 100 − Top%，数值越大表示在该比赛榜单中的相对位置越高。进行中比赛只用当前官方 Public Leaderboard；已完成比赛优先使用已发布或经认证的 Private 结果，空心标记表示赛后提交的估算位次。</p>
 
-  {{ if not $data }}
-    <p class="empty">尚未生成可视化数据。</p>
-  {{ else }}
-    {{ partial "notice.html" $data }}
+  {{ partial "notice.html" $data }}
 
-    <dl class="stats">
-      <div><dt>账号团队</dt><dd>{{ $data.summary.tracked_team_count }}</dd></div>
-      <div><dt>进行中比赛</dt><dd>{{ $data.visualizations.ongoing.competition_count }}</dd></div>
-      <div><dt>已完成比赛</dt><dd>{{ $data.visualizations.completed.competition_count }}</dd></div>
-      <div><dt>结果记录</dt><dd>{{ add $data.visualizations.ongoing.result_count $data.visualizations.completed.result_count }}</dd></div>
-    </dl>
+  {{ partial "stats.html" (slice
+    (dict "label" "账号团队" "value" $data.summary.tracked_team_count)
+    (dict "label" "进行中比赛" "value" $data.visualizations.ongoing.competition_count)
+    (dict "label" "已完成比赛" "value" $data.visualizations.completed.competition_count)
+    (dict "label" "结果记录" "value" (add $data.visualizations.ongoing.result_count $data.visualizations.completed.result_count))) }}
 
-    {{ range $state := slice "ongoing" "completed" }}
-      {{ $group := index $data.visualizations $state }}
-      {{ $ongoing := eq $state "ongoing" }}
-      {{ $label := cond $ongoing "进行中比赛" "已完成比赛" }}
-      <section id="{{ $state }}" aria-labelledby="{{ $state }}-title">
-        <h2 id="{{ $state }}-title">{{ $label }}</h2>
-        <p class="note">{{ $group.competition_count }} 场比赛 · {{ $group.result_count }} 条账号成绩</p>
-        {{ if eq $group.competition_count 0 }}
-          <p class="empty">当前没有可计算分位的{{ $label }}。</p>
-        {{ else }}
-          {{ partial "chart-panel.html" (dict
-            "group" $group "state" $state "type" "bar" "scale" "linear" "index" "01" "best" true
-            "title" (printf "%s每场最佳分位" $label)
-            "subtitle" "每场比赛仅保留当前最佳账号结果") }}
-          {{ partial "chart-panel.html" (dict
-            "group" $group "state" $state "type" "scatter" "scale" (cond $ongoing "linear" "lens") "index" "02" "best" false
-            "title" (printf "%s全部账号成绩" $label)
-            "subtitle" (cond $ongoing "线性分位轴" "Q95–Q100 高位区间展开")) }}
-        {{ end }}
-      </section>
-    {{ end }}
-
-    <section class="methodology" aria-labelledby="viz-method-title">
-      <h2 id="viz-method-title">统计口径</h2>
-      <dl>
-        <dt>统一分位</dt><dd>Quantile = 100 − Rank ÷ 有效榜单队伍数 × 100，不同原始指标因此可在同一坐标上比较。</dd>
-        <dt>进行中</dt><dd>只使用当前官方 Public Leaderboard，不读取或推断尚未公开的 Private 排名。</dd>
-        <dt>已完成</dt><dd>优先使用已发布的 Private Rank 与 Score；授权账号的最终 Private Rank 来自 Kaggle entered 元数据。空心标记为赛后提交的估算位次*。</dd>
-        <dt>覆盖范围</dt><dd>公开榜单匹配配置团队与显式别名；授权 token 补充 entered 比赛、账号团队名、Private 结果与赛后提交。</dd>
-      </dl>
+  {{ range $state := slice "ongoing" "completed" }}
+    {{ $group := index $data.visualizations $state }}
+    {{ $ongoing := eq $state "ongoing" }}
+    {{ $label := cond $ongoing "进行中比赛" "已完成比赛" }}
+    <section id="{{ $state }}" aria-labelledby="{{ $state }}-title">
+      <h2 id="{{ $state }}-title">{{ $label }}</h2>
+      <p class="note">{{ $group.competition_count }} 场比赛 · {{ $group.result_count }} 条账号成绩</p>
+      {{ if eq $group.competition_count 0 }}
+        <p class="empty">当前没有可计算分位的{{ $label }}。</p>
+      {{ else }}
+        {{/* Both charts of a state read the same rows from one non-executable data block. */}}
+        <script type="application/json" id="chart-data-{{ $state }}">{{ $group.competitions | jsonify | safeJS }}</script>
+        {{ partial "chart-panel.html" (dict
+          "group" $group "state" $state "type" "bar" "scale" "linear" "index" "01" "best" true
+          "title" (printf "%s每场最佳分位" $label)
+          "subtitle" "每场比赛仅保留当前最佳账号结果") }}
+        {{ partial "chart-panel.html" (dict
+          "group" $group "state" $state "type" "scatter" "scale" (cond $ongoing "linear" "lens") "index" "02" "best" false
+          "title" (printf "%s全部账号成绩" $label)
+          "subtitle" (cond $ongoing "线性分位轴" "Q95–Q100 高位区间展开")) }}
+      {{ end }}
     </section>
   {{ end }}
+
+  <section class="methodology" aria-labelledby="viz-method-title">
+    <h2 id="viz-method-title">统计口径</h2>
+    <dl>
+      <dt>统一分位</dt><dd>Quantile = 100 − Rank ÷ 有效榜单队伍数 × 100，不同原始指标因此可在同一坐标上比较。</dd>
+      <dt>进行中</dt><dd>只使用当前官方 Public Leaderboard，不读取或推断尚未公开的 Private 排名。</dd>
+      <dt>已完成</dt><dd>优先使用已发布的 Private Rank 与 Score；授权账号的最终 Private Rank 来自 Kaggle entered 元数据。空心标记为赛后提交的估算位次*。</dd>
+      <dt>覆盖范围</dt><dd>公开榜单匹配配置团队与显式别名；授权 token 补充 entered 比赛、账号团队名、Private 结果与赛后提交。</dd>
+    </dl>
+  </section>
 {{ end }}

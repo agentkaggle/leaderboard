@@ -31,6 +31,7 @@ class LeaderboardSnapshot:
     kind: str
     matches: tuple[LeaderboardEntry, ...]
     score_order: str = "unknown"
+    # Best score per team, kept in official rank order, so the first value won.
     score_values: tuple[str, ...] = ()
 
 

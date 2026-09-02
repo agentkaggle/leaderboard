@@ -114,13 +114,14 @@ class FakeSource:
     """Serve a fixed catalog where each competition yields a snapshot or a failure."""
 
     def __init__(self, *pairs: tuple[Competition, object]) -> None:
-        self.pairs = list(pairs)
+        self.competitions = [competition for competition, _ in pairs]
+        self.results = {competition.slug: result for competition, result in pairs}
 
     def list_competitions(self, max_competitions: int | None = None) -> list[Competition]:
-        return [item for item, _ in self.pairs][:max_competitions]
+        return self.competitions[:max_competitions]
 
     def get_leaderboard(self, item: Competition, normalized_teams: dict[str, str]):
-        result = dict((entry.slug, result) for entry, result in self.pairs)[item.slug]
+        result = self.results[item.slug]
         if isinstance(result, Exception):
             raise result
         return result

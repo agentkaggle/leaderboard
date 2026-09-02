@@ -1,0 +1,4 @@
+{{/* A row of headline figures. Expects a slice of (dict "label" … "value" …). */}}
+<dl class="stats">
+  {{ range . }}<div><dt>{{ .label }}</dt><dd>{{ .value }}</dd></div>{{ end }}
+</dl>

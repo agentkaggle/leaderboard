@@ -3,7 +3,6 @@
 
   const SVG_NS = "http://www.w3.org/2000/svg";
   const INK = "#0b0b0b";
-  const SURFACE = "#fcfcfb";
   // Validated light-mode categorical slots, each paired with the readable ink for
   // a label drawn inside the mark. Identity is also carried by the initials in the
   // mark, the legend, and the tooltip, so a repeated hue never stands alone.
@@ -78,6 +77,15 @@
       late_private: "Late Private score",
     })[record.scoreKind] || "Score";
 
+  const resultTimeFormat = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+
   const formatResultTime = (value) => {
     const rawValue = String(value || "").trim();
     if (!rawValue) return "Unavailable";
@@ -85,15 +93,7 @@
       ? rawValue
       : `${rawValue.replace(" ", "T")}Z`;
     const date = new Date(normalized);
-    if (Number.isNaN(date.valueOf())) return rawValue;
-    return new Intl.DateTimeFormat("zh-CN", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZoneName: "short",
-    }).format(date);
+    return Number.isNaN(date.valueOf()) ? rawValue : resultTimeFormat.format(date);
   };
 
   const svgNode = (name, attributes = {}, text = "") => {
@@ -103,22 +103,32 @@
     return node;
   };
 
-  const readRecords = (mount) =>
-    [...mount.querySelectorAll(".chart-datum")].map((datum) => ({
-      competition: datum.dataset.competition || "",
-      team: datum.dataset.team || "",
-      rank: Number(datum.dataset.rank),
-      teamCount: Number(datum.dataset.teamCount),
-      topPercent: Number(datum.dataset.topPercent),
-      quantile: Number(datum.dataset.quantile),
-      score: datum.dataset.score || "",
-      resultKind: datum.dataset.resultKind || "",
-      rankKind: datum.dataset.rankKind || "",
-      scoreKind: datum.dataset.scoreKind || "",
-      resultTime: datum.dataset.resultTime || "",
-      official: datum.dataset.isOfficial === "true",
-      provenance: datum.dataset.provenance || "",
-    }));
+  const chartData = new Map();
+
+  const readRecords = (mount) => {
+    const sourceId = mount.dataset.chartSource;
+    if (!chartData.has(sourceId)) {
+      const source = document.getElementById(sourceId);
+      chartData.set(sourceId, source ? JSON.parse(source.textContent) : []);
+    }
+    const best = mount.dataset.chartBest === "true";
+    return chartData.get(sourceId).flatMap((competition) =>
+      (best ? competition.results.slice(0, 1) : competition.results).map((result) => ({
+        competition: competition.title,
+        team: result.team_name,
+        rank: result.rank,
+        teamCount: result.leaderboard_team_count,
+        topPercent: result.top_percent,
+        quantile: result.quantile,
+        score: result.score,
+        rankKind: result.rank_kind,
+        scoreKind: result.score_kind,
+        resultTime: result.result_time,
+        official: result.is_official,
+        provenance: result.provenance,
+      })),
+    );
+  };
 
   const chartFrame = (mount, width, height) => {
     const wrapper = document.createElement("div");
@@ -178,7 +188,7 @@
       patternUnits: "userSpaceOnUse",
     });
     pattern.append(
-      svgNode("rect", { width: 8, height: 8, fill: SURFACE }),
+      svgNode("rect", { class: "chart-surface-fill", width: 8, height: 8 }),
       svgNode("path", {
         d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
         stroke: color,
@@ -190,13 +200,16 @@
     svg.append(definitions);
   };
 
-  const resultTooltip = (record) =>
-    `${record.competition}\n${record.team}\n` +
-    `${rankSourceLabel(record)} #${record.rank} / ${record.teamCount}\n` +
-    `${scoreSourceLabel(record)} ${record.score}\n` +
-    `Result time ${formatResultTime(record.resultTime)}\n` +
-    `Q${record.quantile.toFixed(2)} · Top ${record.topPercent.toFixed(2)}%\n` +
-    record.provenance;
+  const resultRows = (record) => [
+    [
+      "Rank",
+      `${rankSourceLabel(record)} · #${record.rank.toLocaleString()} / ${record.teamCount.toLocaleString()}`,
+    ],
+    ["Score", `${scoreSourceLabel(record)} · ${record.score}`],
+    ["Result time", formatResultTime(record.resultTime)],
+    ["Quantile", `Q${record.quantile.toFixed(2)}`],
+    ["Top", `${record.topPercent.toFixed(2)}%`],
+  ];
 
   let tooltipNode;
 
@@ -226,16 +239,7 @@
   const fillTooltip = (tooltip, record) => {
     const details = document.createElement("dl");
     details.className = "chart-tooltip-details";
-    [
-      [
-        "Rank",
-        `${rankSourceLabel(record)} · #${record.rank.toLocaleString()} / ${record.teamCount.toLocaleString()}`,
-      ],
-      ["Score", `${scoreSourceLabel(record)} · ${record.score}`],
-      ["Result time", formatResultTime(record.resultTime)],
-      ["Quantile", `Q${record.quantile.toFixed(2)}`],
-      ["Top", `${record.topPercent.toFixed(2)}%`],
-    ].forEach(([term, value]) => {
+    resultRows(record).forEach(([term, value]) => {
       details.append(tooltipTextNode("dt", "", term), tooltipTextNode("dd", "", value));
     });
     tooltip.replaceChildren(
@@ -271,7 +275,13 @@
     node.classList.add("chart-interactive-mark");
     node.setAttribute("tabindex", "0");
     node.setAttribute("aria-describedby", tooltip.id);
-    node.setAttribute("aria-label", resultTooltip(record).replaceAll("\n", ". "));
+    node.setAttribute(
+      "aria-label",
+      [record.competition, record.team]
+        .concat(resultRows(record).map(([term, value]) => `${term} ${value}`))
+        .concat(record.provenance)
+        .join(". "),
+    );
 
     const showAt = (clientX, clientY) => {
       fillTooltip(tooltip, record);
@@ -393,9 +403,8 @@
       if (!grouped.has(record.competition)) grouped.set(record.competition, []);
       grouped.get(record.competition).push(record);
     });
-    const teams = [...new Set(records.map((record) => record.team))].sort((left, right) =>
-      left.localeCompare(right, "zh-CN"),
-    );
+    const present = new Set(records.map((record) => record.team));
+    const teams = [...teamColors.keys()].filter((team) => present.has(team));
     const width = 1180;
     const left = 300;
     const plotWidth = 840;
@@ -465,12 +474,11 @@
         const [color, ink] = teamColors.get(record.team) || TEAM_COLORS[0];
         const marker = bindRecordTooltip(
           svgNode("circle", {
+            class: record.official ? "chart-mark-official" : "chart-mark-estimate",
             cx: x,
             cy: y,
             r: 9,
-            fill: record.official ? color : SURFACE,
-            stroke: record.official ? SURFACE : color,
-            "stroke-width": record.official ? 2 : 3,
+            ...(record.official ? { fill: color } : { stroke: color }),
           }),
           record,
         );
@@ -481,9 +489,6 @@
             cx: x,
             cy: y,
             r: 14,
-            fill: "none",
-            stroke: INK,
-            "stroke-width": 2,
             "data-team": record.team,
             "aria-hidden": "true",
           }),
@@ -506,21 +511,19 @@
     const [sampleColor] = TEAM_COLORS[0];
     svg.append(
       svgNode("circle", {
+        class: "chart-mark-official",
         cx: 28,
         cy: legendTop,
         r: 6,
         fill: sampleColor,
-        stroke: SURFACE,
-        "stroke-width": 2,
       }),
       svgNode("text", { class: "chart-legend-label", x: 42, y: legendTop + 4 }, "Official rank"),
       svgNode("circle", {
+        class: "chart-mark-estimate",
         cx: 170,
         cy: legendTop,
         r: 6,
-        fill: SURFACE,
         stroke: sampleColor,
-        "stroke-width": 3,
       }),
       svgNode("text", { class: "chart-legend-label", x: 184, y: legendTop + 4 }, "Late estimate*"),
     );
@@ -547,25 +550,32 @@
 
   let highlightedTeam = "";
 
-  const applyTeamHighlight = () => {
-    document.querySelectorAll(".chart-team-highlight-ring[data-team]").forEach((ring) => {
-      ring.classList.toggle(
-        "chart-team-highlighted",
-        Boolean(highlightedTeam) && ring.dataset.team === highlightedTeam,
-      );
-    });
-    document.querySelectorAll(".chart-legend-control").forEach((control) => {
-      const selected = Boolean(highlightedTeam) && control.dataset.team === highlightedTeam;
-      control.classList.toggle("chart-legend-selected", selected);
-      control.setAttribute("aria-pressed", String(selected));
-    });
-  };
-
+  /** Highlight every mark of one account, touching only the two teams involved. */
   const bindLegendControls = () => {
-    const toggle = (team) => {
-      highlightedTeam = highlightedTeam === team ? "" : team;
-      applyTeamHighlight();
+    const byTeam = new Map();
+    const register = (team, node) => {
+      if (!byTeam.has(team)) byTeam.set(team, []);
+      byTeam.get(team).push(node);
     };
+    document
+      .querySelectorAll(".chart-team-highlight-ring[data-team], .chart-legend-control")
+      .forEach((node) => register(node.dataset.team || "", node));
+
+    const paint = (team, selected) => {
+      (byTeam.get(team) || []).forEach((node) => {
+        node.classList.toggle("chart-team-highlighted", selected);
+        node.classList.toggle("chart-legend-selected", selected);
+        if (node.hasAttribute("aria-pressed")) {
+          node.setAttribute("aria-pressed", String(selected));
+        }
+      });
+    };
+    const toggle = (team) => {
+      paint(highlightedTeam, false);
+      highlightedTeam = highlightedTeam === team ? "" : team;
+      paint(highlightedTeam, true);
+    };
+
     document.querySelectorAll(".chart-legend-control").forEach((control) => {
       control.addEventListener("click", () => toggle(control.dataset.team || ""));
       control.addEventListener("keydown", (event) => {
@@ -577,20 +587,18 @@
   };
 
   const renderCharts = () => {
-    const mounts = [...document.querySelectorAll(".chart-mount")];
+    const charts = [...document.querySelectorAll(".chart-mount")].map((mount) => [
+      mount,
+      readRecords(mount),
+    ]);
     const allTeams = [
-      ...new Set(
-        mounts.flatMap((mount) =>
-          [...mount.querySelectorAll(".chart-datum")].map((datum) => datum.dataset.team || ""),
-        ),
-      ),
+      ...new Set(charts.flatMap(([, records]) => records.map((record) => record.team))),
     ]
       .filter(Boolean)
       .sort((left, right) => left.localeCompare(right, "zh-CN"));
     const teamColors = new Map(allTeams.map((team, index) => [team, teamColor(index)]));
 
-    mounts.forEach((mount) => {
-      const records = readRecords(mount);
+    charts.forEach(([mount, records]) => {
       if (!records.length) return;
       if (mount.dataset.chartType === "bar") renderBarChart(mount, records);
       if (mount.dataset.chartType === "scatter") renderScatterChart(mount, records, teamColors);

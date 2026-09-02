@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 
+MEDALS = ("gold", "silver", "bronze")
+
+
 def medal_cutoffs(team_count: int) -> dict[str, int]:
     """Return rank-only medal-zone cutoffs from Kaggle's published progression table.
 
