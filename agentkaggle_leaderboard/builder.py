@@ -4,7 +4,6 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from statistics import fmean
 from typing import Callable
 
 from requests import exceptions as requests_exceptions
@@ -30,6 +29,8 @@ from .visualizations import build_visualizations
 
 ProgressCallback = Callable[[int, int], None]
 MINIMUM_SCAN_SUCCESS_RATIO = 0.5
+TOP_PERCENT_THRESHOLD = 5.0
+MEDALS = ("gold", "silver", "bronze")
 EXCLUDED_COMPETITION_SLUGS = frozenset(
     {
         "ai-agent-security-multi-step-tool-attacks",
@@ -45,19 +46,6 @@ def _iso_utc(value: datetime | None) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _submission_datetime(value: object) -> datetime | None:
-    raw_value = str(value or "").strip()
-    if not raw_value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
 
 
 def _competition_state(deadline: datetime | None, generated_at: datetime) -> str:
@@ -76,11 +64,13 @@ def _numeric_value(value: object) -> Decimal | None:
     return score if score.is_finite() else None
 
 
+def _is_better(candidate: Decimal, reference: Decimal, score_order: str) -> bool:
+    return candidate > reference if score_order == "higher" else candidate < reference
+
+
 def _safe_failure_kind(exc: BaseException) -> str:
     status = getattr(getattr(exc, "response", None), "status_code", None)
-    if status in {401, 403}:
-        return "access_denied"
-    if isinstance(exc, KaggleAuthenticationError):
+    if status in {401, 403} or isinstance(exc, KaggleAuthenticationError):
         return "access_denied"
     if status == 404:
         return "not_found"
@@ -103,52 +93,61 @@ def _safe_failure_kind(exc: BaseException) -> str:
     return "unexpected"
 
 
+def _new_entry(team_name: str) -> dict[str, object]:
+    """One published row per team and competition, with every field defaulted."""
+    return {
+        "team_name": team_name,
+        "rank": None,
+        "top_percent": None,
+        "score": "",
+        "authenticated_private_score": "",
+        "authenticated_private_submission_date": "",
+        "authenticated_private_rank": None,
+        "authenticated_private_top_percent": None,
+        "authenticated_private_rank_team_count": None,
+        "submission_date": "",
+        "medal_candidate": "unavailable",
+        "late_public_score": "",
+        "late_private_score": "",
+        "late_submission_date": "",
+        "late_rank": None,
+        "late_top_percent": None,
+        "late_rank_team_count": None,
+        "late_beats_winner": False,
+    }
+
+
 def _public_competition(
     competition: Competition,
     snapshot: LeaderboardSnapshot | None,
     generated_at: datetime,
 ) -> dict[str, object]:
-    entries: list[dict[str, object]] = []
     best_by_team: dict[str, LeaderboardEntry] = {}
-    if snapshot is not None:
-        for entry in snapshot.matches:
-            key = normalize_team_name(entry.configured_team_name)
-            existing = best_by_team.get(key)
-            if existing is None or entry.rank < existing.rank:
-                best_by_team[key] = entry
+    for match in snapshot.matches if snapshot is not None else ():
+        key = normalize_team_name(match.configured_team_name)
+        existing = best_by_team.get(key)
+        if existing is None or match.rank < existing.rank:
+            best_by_team[key] = match
 
-    for entry in sorted(
+    entries: list[dict[str, object]] = []
+    for match in sorted(
         best_by_team.values(),
         key=lambda item: (item.rank, item.configured_team_name),
     ):
-        if snapshot is None:
-            raise AssertionError("Official entries require a leaderboard snapshot")
-        top_percent = round((entry.rank / snapshot.team_count) * 100, 4)
-        entries.append(
-            {
-                "team_name": entry.configured_team_name,
-                "rank": entry.rank,
-                "top_percent": top_percent,
-                "score": entry.score,
-                "authenticated_private_score": "",
-                "authenticated_private_submission_date": "",
-                "authenticated_private_rank": None,
-                "authenticated_private_top_percent": None,
-                "authenticated_private_rank_team_count": None,
-                "submission_date": entry.submission_date,
-                "medal_candidate": (
-                    medal_candidate(entry.rank, snapshot.team_count)
-                    if competition.awards_points
-                    else "not_eligible"
-                ),
-                "late_public_score": "",
-                "late_private_score": "",
-                "late_submission_date": "",
-                "late_rank": None,
-                "late_top_percent": None,
-                "late_rank_team_count": None,
-            }
+        assert snapshot is not None  # Matches only exist alongside a snapshot.
+        entry = _new_entry(match.configured_team_name)
+        entry.update(
+            rank=match.rank,
+            top_percent=round((match.rank / snapshot.team_count) * 100, 4),
+            score=match.score,
+            submission_date=match.submission_date,
+            medal_candidate=(
+                medal_candidate(match.rank, snapshot.team_count)
+                if competition.awards_points
+                else "not_eligible"
+            ),
         )
+        entries.append(entry)
 
     return {
         "slug": competition.slug,
@@ -172,8 +171,7 @@ def _public_late_submissions(
 ) -> list[dict[str, object]]:
     def numeric_score(entry: LateSubmissionEntry) -> Decimal | None:
         for value in (entry.private_score, entry.public_score):
-            score = _numeric_value(value)
-            if score is not None:
+            if (score := _numeric_value(value)) is not None:
                 return score
         return None
 
@@ -181,36 +179,20 @@ def _public_late_submissions(
         score_order = score_orders.get(candidate.competition_slug, "unknown")
         candidate_score = numeric_score(candidate)
         existing_score = numeric_score(existing)
-        if score_order in {"higher", "lower"}:
-            if candidate_score is not None and existing_score is None:
+        if score_order in {"higher", "lower"} and candidate_score is not None:
+            if existing_score is None:
                 return True
-            if candidate_score is not None and existing_score is not None:
-                if candidate_score != existing_score:
-                    return (
-                        candidate_score > existing_score
-                        if score_order == "higher"
-                        else candidate_score < existing_score
-                    )
+            if candidate_score != existing_score:
+                return _is_better(candidate_score, existing_score, score_order)
         return candidate.submission_date > existing.submission_date
 
     unique: dict[tuple[str, str], LateSubmissionEntry] = {}
     for entry in late_submissions:
-        key = (
-            entry.competition_slug,
-            normalize_team_name(entry.configured_team_name),
-        )
+        key = (entry.competition_slug, normalize_team_name(entry.configured_team_name))
         existing = unique.get(key)
         if existing is None or is_better(entry, existing):
             unique[key] = entry
 
-    ordered = sorted(
-        unique.values(),
-        key=lambda entry: (
-            -entry.submission_date.timestamp(),
-            entry.competition_title.casefold(),
-            entry.configured_team_name.casefold(),
-        ),
-    )
     return [
         {
             "competition_slug": entry.competition_slug,
@@ -222,7 +204,14 @@ def _public_late_submissions(
             "private_score": entry.private_score,
             "submission_date": _iso_utc(entry.submission_date),
         }
-        for entry in ordered
+        for entry in sorted(
+            unique.values(),
+            key=lambda entry: (
+                -entry.submission_date.timestamp(),
+                entry.competition_title.casefold(),
+                entry.configured_team_name.casefold(),
+            ),
+        )
     ]
 
 
@@ -234,37 +223,32 @@ def _scores_match(left: object, right: object) -> bool:
     return str(left or "").strip() == str(right or "").strip()
 
 
+def _entries(competition: dict[str, object]) -> list[dict[str, object]]:
+    entries = competition["entries"]
+    if not isinstance(entries, list):
+        raise TypeError("Competition entries must be a list")
+    return entries
+
+
 def _merge_authenticated_private_scores(
     competitions: list[dict[str, object]],
     authenticated_scores: tuple[AuthenticatedSubmissionScoreEntry, ...],
 ) -> int:
-    scores_by_team: dict[
-        tuple[str, str], list[AuthenticatedSubmissionScoreEntry]
-    ] = {}
+    scores_by_team: dict[tuple[str, str], list[AuthenticatedSubmissionScoreEntry]] = {}
     for score in authenticated_scores:
-        key = (
-            score.competition_slug,
-            normalize_team_name(score.configured_team_name),
-        )
+        key = (score.competition_slug, normalize_team_name(score.configured_team_name))
         scores_by_team.setdefault(key, []).append(score)
 
     matched_count = 0
     for competition in competitions:
-        if (
-            competition["leaderboard_kind"] != "public"
-            or competition["state"] != "ended"
-        ):
+        if competition["leaderboard_kind"] != "public" or competition["state"] != "ended":
             continue
         slug = str(competition["slug"])
-        entries = competition["entries"]
-        if not isinstance(entries, list):
-            raise TypeError("Competition entries must be a list")
-        for entry in entries:
+        for entry in _entries(competition):
             candidates = [
                 candidate
                 for candidate in scores_by_team.get(
-                    (slug, normalize_team_name(str(entry["team_name"]))),
-                    [],
+                    (slug, normalize_team_name(str(entry["team_name"]))), []
                 )
                 if _scores_match(candidate.public_score, entry["score"])
             ]
@@ -276,41 +260,30 @@ def _merge_authenticated_private_scores(
             if len(private_scores) != 1:
                 continue
             private_score = private_scores.pop()
-            private_candidates = [
+            matches = [
                 candidate
                 for candidate in candidates
                 if candidate.private_score.strip() == private_score
             ]
-            newest = max(
-                private_candidates,
-                key=lambda candidate: candidate.submission_date,
-            )
+            newest = max(matches, key=lambda candidate: candidate.submission_date)
             entry["authenticated_private_score"] = private_score
-            entry["authenticated_private_submission_date"] = _iso_utc(
-                newest.submission_date
-            )
+            entry["authenticated_private_submission_date"] = _iso_utc(newest.submission_date)
             private_ranks = {
                 (candidate.private_rank, candidate.private_rank_team_count)
-                for candidate in private_candidates
+                for candidate in matches
                 if candidate.private_rank is not None
                 and candidate.private_rank_team_count is not None
                 and candidate.private_rank_team_count > 0
             }
             if len(private_ranks) == 1:
                 private_rank, private_team_count = private_ranks.pop()
-                if private_rank is None or private_team_count is None:
-                    raise AssertionError("Authenticated private rank is incomplete")
                 entry["authenticated_private_rank"] = private_rank
                 entry["authenticated_private_top_percent"] = round(
-                    (private_rank / private_team_count) * 100,
-                    4,
+                    (private_rank / private_team_count) * 100, 4
                 )
                 entry["authenticated_private_rank_team_count"] = private_team_count
                 if competition["awards_points"]:
-                    entry["medal_candidate"] = medal_candidate(
-                        private_rank,
-                        private_team_count,
-                    )
+                    entry["medal_candidate"] = medal_candidate(private_rank, private_team_count)
             matched_count += 1
     return matched_count
 
@@ -345,43 +318,24 @@ def _merge_late_results_into_competitions(
             competitions.append(competition)
             competitions_by_slug[slug] = competition
 
-        entries = competition["entries"]
-        if not isinstance(entries, list):
-            raise TypeError("Competition entries must be a list")
+        entries = _entries(competition)
         team_key = normalize_team_name(str(late_submission["team_name"]))
-        matching_entry = next(
+        entry = next(
             (
-                entry
-                for entry in entries
-                if normalize_team_name(str(entry["team_name"])) == team_key
+                item
+                for item in entries
+                if normalize_team_name(str(item["team_name"])) == team_key
             ),
             None,
         )
-        if matching_entry is None:
-            matching_entry = {
-                "team_name": late_submission["team_name"],
-                "rank": None,
-                "top_percent": None,
-                "score": "",
-                "authenticated_private_score": "",
-                "authenticated_private_submission_date": "",
-                "authenticated_private_rank": None,
-                "authenticated_private_top_percent": None,
-                "authenticated_private_rank_team_count": None,
-                "submission_date": "",
-                "medal_candidate": "unavailable",
-                "late_public_score": "",
-                "late_private_score": "",
-                "late_submission_date": "",
-                "late_rank": None,
-                "late_top_percent": None,
-                "late_rank_team_count": None,
-            }
-            entries.append(matching_entry)
+        if entry is None:
+            entry = _new_entry(str(late_submission["team_name"]))
+            entries.append(entry)
 
-        matching_entry["late_public_score"] = late_submission["public_score"]
-        matching_entry["late_private_score"] = late_submission["private_score"]
-        matching_entry["late_submission_date"] = late_submission["submission_date"]
+        entry["late_public_score"] = late_submission["public_score"]
+        entry["late_private_score"] = late_submission["private_score"]
+        entry["late_submission_date"] = late_submission["submission_date"]
+
         snapshot = snapshots.get(slug)
         late_score = next(
             (
@@ -394,40 +348,34 @@ def _merge_late_results_into_competitions(
             ),
             None,
         )
-        leaderboard_scores = (
-            [score for value in snapshot.score_values if (score := _numeric_value(value)) is not None]
-            if snapshot is not None
-            else []
-        )
-        official_score = _numeric_value(matching_entry["score"])
-        if official_score is not None and official_score in leaderboard_scores:
-            leaderboard_scores.remove(official_score)
         if (
-            snapshot is not None
-            and snapshot.team_count > 0
-            and snapshot.score_order in {"higher", "lower"}
-            and late_score is not None
-            and leaderboard_scores
+            snapshot is None
+            or late_score is None
+            or snapshot.team_count <= 0
+            or snapshot.score_order not in {"higher", "lower"}
         ):
-            better_count = sum(
-                score > late_score
-                if snapshot.score_order == "higher"
-                else score < late_score
-                for score in leaderboard_scores
-            )
-            late_rank = better_count + 1
-            matching_entry["late_rank"] = late_rank
-            matching_entry["late_top_percent"] = round(
-                (late_rank / snapshot.team_count) * 100,
-                4,
-            )
-            matching_entry["late_rank_team_count"] = snapshot.team_count
+            continue
+
+        # score_values is ordered by official rank, so the first value is the winner's.
+        board_scores = [
+            score for value in snapshot.score_values if (score := _numeric_value(value)) is not None
+        ]
+        if not board_scores:
+            continue
+        entry["late_beats_winner"] = _is_better(late_score, board_scores[0], snapshot.score_order)
+
+        official_score = _numeric_value(entry["score"])
+        if official_score is not None and official_score in board_scores:
+            board_scores.remove(official_score)
+        late_rank = 1 + sum(
+            _is_better(score, late_score, snapshot.score_order) for score in board_scores
+        )
+        entry["late_rank"] = late_rank
+        entry["late_top_percent"] = round((late_rank / snapshot.team_count) * 100, 4)
+        entry["late_rank_team_count"] = snapshot.team_count
 
     for competition in competitions:
-        entries = competition["entries"]
-        if not isinstance(entries, list):
-            raise TypeError("Competition entries must be a list")
-        entries.sort(
+        _entries(competition).sort(
             key=lambda entry: (
                 entry["rank"] is None,
                 int(entry["rank"]) if entry["rank"] is not None else 0,
@@ -436,129 +384,95 @@ def _merge_late_results_into_competitions(
         )
 
 
-def _team_board(
+def _official_top_percent(entry: dict[str, object]) -> float | None:
+    """The published Top%, preferring an authenticated final Private rank."""
+    for key in ("authenticated_private_top_percent", "top_percent"):
+        if entry[key] is not None:
+            return float(entry[key])  # type: ignore[arg-type]
+    return None
+
+
+def _ranked(summaries: list[dict[str, object]], sort_key: Callable[[dict], tuple]) -> list[dict]:
+    """Order a board and number only the teams that have something to rank."""
+    ordered = sorted(summaries, key=sort_key)
+    position = 0
+    for summary in ordered:
+        if summary["position"] is not None:
+            position += 1
+            summary["position"] = position
+    return ordered
+
+
+def _ongoing_board(
     teams: tuple[str, ...],
     competitions: list[dict[str, object]],
-    late_submissions: list[dict[str, object]],
-    *,
-    mode: str,
 ) -> list[dict[str, object]]:
-    results_by_team: dict[str, list[tuple[int, float]]] = {team: [] for team in teams}
-    competition_slugs_by_team: dict[str, set[str]] = {
-        team: set() for team in teams
-    }
-    late_counts = Counter(str(entry["team_name"]) for entry in late_submissions)
-    official_medal_counts = Counter()
-    last_submission_by_team: dict[str, datetime | None] = {team: None for team in teams}
+    """Rank official participation by medal-zone count, then by Top 5% count."""
+    medals = {team: Counter() for team in teams}
+    top_percent_counts = {team: 0 for team in teams}
 
     for competition in competitions:
-        for entry in competition["entries"]:  # type: ignore[index]
-            team_name = str(entry["team_name"])  # type: ignore[index]
-            slug = str(competition["slug"])
-            authenticated_private_result = (
-                (
-                    int(entry["authenticated_private_rank"]),  # type: ignore[index]
-                    float(entry["authenticated_private_top_percent"]),  # type: ignore[index]
-                )
-                if entry["authenticated_private_rank"] is not None  # type: ignore[index]
-                and entry["authenticated_private_top_percent"] is not None  # type: ignore[index]
-                else None
-            )
-            official_result = authenticated_private_result or (
-                (int(entry["rank"]), float(entry["top_percent"]))  # type: ignore[index]
-                if entry["rank"] is not None  # type: ignore[index]
-                else None
-            )
-            late_result = (
-                (int(entry["late_rank"]), float(entry["late_top_percent"]))  # type: ignore[index]
-                if entry["late_rank"] is not None  # type: ignore[index]
-                else None
-            )
-            if entry["medal_candidate"] in {"gold", "silver", "bronze"}:  # type: ignore[index]
-                official_medal_counts[team_name] += 1
+        for entry in _entries(competition):
+            team = str(entry["team_name"])
+            if team not in medals:
+                continue
+            if entry["medal_candidate"] in MEDALS:
+                medals[team][entry["medal_candidate"]] += 1
+            top_percent = _official_top_percent(entry)
+            if top_percent is not None and top_percent <= TOP_PERCENT_THRESHOLD:
+                top_percent_counts[team] += 1
 
-            selected_result: tuple[int, float] | None
-            has_result = False
-            if mode == "ongoing":
-                selected_result = official_result
-                has_result = official_result is not None
-                submission_dates = (  # type: ignore[index]
-                    entry["authenticated_private_submission_date"]
-                    or entry["submission_date"],
-                )
-            elif mode == "late":
-                selected_result = late_result
-                has_result = bool(entry["late_submission_date"])  # type: ignore[index]
-                submission_dates = (entry["late_submission_date"],)  # type: ignore[index]
-            elif mode == "overall":
-                available_results = [
-                    result
-                    for result in (official_result, late_result)
-                    if result is not None
-                ]
-                selected_result = min(
-                    available_results,
-                    key=lambda result: (result[1], result[0]),
-                    default=None,
-                )
-                has_result = official_result is not None or bool(  # type: ignore[index]
-                    entry["late_submission_date"]
-                )
-                submission_dates = (  # type: ignore[index]
-                    entry["authenticated_private_submission_date"]
-                    or entry["submission_date"],
-                    entry["late_submission_date"],
-                )
-            else:
-                raise ValueError("Unsupported team leaderboard mode")
-
-            for submission_date in submission_dates:
-                parsed_date = _submission_datetime(submission_date)
-                if parsed_date is not None and (
-                    last_submission_by_team[team_name] is None
-                    or parsed_date > last_submission_by_team[team_name]
-                ):
-                    last_submission_by_team[team_name] = parsed_date
-            if has_result:
-                competition_slugs_by_team[team_name].add(slug)
-            if selected_result is not None:
-                results_by_team[team_name].append(selected_result)
-
-    summaries: list[dict[str, object]] = []
-    for team in teams:
-        results = results_by_team[team]
-        top_percents = [top_percent for _, top_percent in results]
-        summaries.append(
-            {
-                "position": None,
-                "name": team,
-                "competition_count": len(competition_slugs_by_team[team]),
-                "best_rank": min((rank for rank, _ in results), default=None),
-                "average_top_percent": round(fmean(top_percents), 4) if top_percents else None,
-                "medal_candidate_count": (
-                    official_medal_counts[team] if mode in {"overall", "ongoing"} else 0
-                ),
-                "late_submission_count": (
-                    late_counts[team] if mode in {"overall", "late"} else 0
-                ),
-                "last_submission_date": _iso_utc(last_submission_by_team[team]),
-            }
-        )
-    ordered = sorted(
+    summaries = [
+        {
+            "position": 0 if sum(medals[team].values()) or top_percent_counts[team] else None,
+            "name": team,
+            "gold_count": medals[team]["gold"],
+            "silver_count": medals[team]["silver"],
+            "bronze_count": medals[team]["bronze"],
+            "medal_count": sum(medals[team].values()),
+            "top_percent_count": top_percent_counts[team],
+        }
+        for team in teams
+    ]
+    return _ranked(
         summaries,
-        key=lambda item: (
-            float(item["average_top_percent"]) if item["average_top_percent"] is not None else float("inf"),
-            -int(item["competition_count"]),
-            int(item["best_rank"]) if item["best_rank"] is not None else 2**31,
-            str(item["name"]).casefold(),
+        lambda summary: (
+            -int(summary["medal_count"]),
+            -int(summary["top_percent_count"]),
+            -int(summary["gold_count"]),
+            -int(summary["silver_count"]),
+            str(summary["name"]).casefold(),
         ),
     )
-    position = 0
-    for item in ordered:
-        if item["average_top_percent"] is not None:
-            position += 1
-            item["position"] = position
-    return ordered
+
+
+def _late_board(
+    teams: tuple[str, ...],
+    competitions: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Rank post-deadline work by how often it beat the original winning score."""
+    beat_winner_counts = {team: 0 for team in teams}
+    for competition in competitions:
+        for entry in _entries(competition):
+            team = str(entry["team_name"])
+            if entry["late_beats_winner"] and team in beat_winner_counts:
+                beat_winner_counts[team] += 1
+
+    summaries = [
+        {
+            "position": 0 if beat_winner_counts[team] else None,
+            "name": team,
+            "beat_winner_count": beat_winner_counts[team],
+        }
+        for team in teams
+    ]
+    return _ranked(
+        summaries,
+        lambda summary: (
+            -int(summary["beat_winner_count"]),
+            str(summary["name"]).casefold(),
+        ),
+    )
 
 
 def build_leaderboard(
@@ -569,9 +483,7 @@ def build_leaderboard(
     generated_at: datetime | None = None,
     progress: ProgressCallback | None = None,
     late_submissions: tuple[LateSubmissionEntry, ...] = (),
-    authenticated_submission_scores: tuple[
-        AuthenticatedSubmissionScoreEntry, ...
-    ] = (),
+    authenticated_submission_scores: tuple[AuthenticatedSubmissionScoreEntry, ...] = (),
     late_submission_account_count: int = 0,
     late_submission_failure_kinds: tuple[str, ...] = (),
 ) -> dict[str, object]:
@@ -587,33 +499,31 @@ def build_leaderboard(
 
     with ThreadPoolExecutor(max_workers=settings.workers) as executor:
         futures = {
-            executor.submit(source.get_leaderboard, competition, settings.normalized_teams): competition
+            executor.submit(
+                source.get_leaderboard, competition, settings.normalized_teams
+            ): competition
             for competition in competitions
         }
-        completed = 0
-        for future in as_completed(futures):
+        for completed, future in enumerate(as_completed(futures), start=1):
             competition = futures[future]
             try:
                 snapshots[competition.slug] = future.result()
             except Exception as exc:  # Each competition is an independent, best-effort source.
                 failures.append(ScanFailure(competition.slug, _safe_failure_kind(exc)))
-            completed += 1
             if progress:
                 progress(completed, len(competitions))
 
-    if competitions and not snapshots:
+    if not snapshots:
         raise RuntimeError("Kaggle returned no usable competition leaderboards")
-    scan_success_ratio = len(snapshots) / len(competitions)
-    if scan_success_ratio < MINIMUM_SCAN_SUCCESS_RATIO:
+    if len(snapshots) / len(competitions) < MINIMUM_SCAN_SUCCESS_RATIO:
         raise RuntimeError("Kaggle scan was too degraded to replace the last good snapshot")
 
-    score_orders = {
-        competition_slug: snapshot.score_order
-        for competition_slug, snapshot in snapshots.items()
-    }
     public_late_submissions = [
         entry
-        for entry in _public_late_submissions(late_submissions, score_orders)
+        for entry in _public_late_submissions(
+            late_submissions,
+            {slug: snapshot.score_order for slug, snapshot in snapshots.items()},
+        )
         if str(entry["competition_slug"]) not in EXCLUDED_COMPETITION_SLUGS
     ]
     late_competition_slugs = {
@@ -624,82 +534,51 @@ def build_leaderboard(
         for competition in competitions
         if competition.slug not in EXCLUDED_COMPETITION_SLUGS
         and (
-            (
-                competition.slug in snapshots
-                and bool(snapshots[competition.slug].matches)
-            )
+            (competition.slug in snapshots and bool(snapshots[competition.slug].matches))
             or competition.slug in late_competition_slugs
         )
     ]
     _merge_late_results_into_competitions(
-        public_competitions,
-        public_late_submissions,
-        snapshots,
+        public_competitions, public_late_submissions, snapshots
     )
     authenticated_private_score_count = _merge_authenticated_private_scores(
-        public_competitions,
-        authenticated_submission_scores,
+        public_competitions, authenticated_submission_scores
     )
     public_competitions.sort(
         key=lambda item: (
             item["state"] != "active",
             str(item["deadline"] or "0000"),
             str(item["title"]).casefold(),
-        ),
-        reverse=False,
+        )
     )
 
-    participation_count = sum(len(item["entries"]) for item in public_competitions)
-    late_competition_count = len(
-        late_competition_slugs
-    )
     truncated = max_competitions is not None and len(competitions) >= max_competitions
-    status = "partial" if failures or late_submission_failure_kinds or truncated else "ready"
-    error_counts = dict(sorted(Counter(failure.kind for failure in failures).items()))
-    late_error_counts = dict(sorted(Counter(late_submission_failure_kinds).items()))
-
-    overall_teams = _team_board(
-        settings.teams,
-        public_competitions,
-        public_late_submissions,
-        mode="overall",
-    )
-    late_teams = _team_board(
-        settings.teams,
-        public_competitions,
-        public_late_submissions,
-        mode="late",
-    )
-    ongoing_teams = _team_board(
-        settings.teams,
-        public_competitions,
-        public_late_submissions,
-        mode="ongoing",
-    )
-
     return {
-        "schema_version": 9,
+        "schema_version": 10,
         "generated_at": _iso_utc(generated_at),
-        "status": status,
+        "status": (
+            "partial" if failures or late_submission_failure_kinds or truncated else "ready"
+        ),
         "summary": {
             "tracked_team_count": len(settings.teams),
             "discovered_competition_count": len(competitions),
             "scanned_competition_count": len(snapshots),
             "failed_competition_count": len(failures),
             "matched_competition_count": len(public_competitions),
-            "participation_count": participation_count,
+            "participation_count": sum(len(_entries(item)) for item in public_competitions),
             "late_submission_account_count": late_submission_account_count,
             "failed_late_submission_account_count": len(late_submission_failure_kinds),
-            "late_submission_competition_count": late_competition_count,
+            "late_submission_competition_count": len(late_competition_slugs),
             "late_submission_count": len(public_late_submissions),
             "authenticated_private_score_count": authenticated_private_score_count,
-            "late_submission_error_counts": late_error_counts,
+            "late_submission_error_counts": dict(
+                sorted(Counter(late_submission_failure_kinds).items())
+            ),
             "truncated": truncated,
-            "error_counts": error_counts,
+            "error_counts": dict(sorted(Counter(failure.kind for failure in failures).items())),
         },
-        "teams": overall_teams,
-        "late_teams": late_teams,
-        "ongoing_teams": ongoing_teams,
+        "ongoing_teams": _ongoing_board(settings.teams, public_competitions),
+        "late_teams": _late_board(settings.teams, public_competitions),
         "competitions": public_competitions,
         "late_submissions": public_late_submissions,
         "visualizations": build_visualizations(public_competitions),
@@ -711,9 +590,8 @@ def build_leaderboard(
             ),
             "top_percent": (
                 "Each team contributes at most once per competition using its preferred official "
-                "rank. Authenticated final Private Rank uses the account-visible team count; "
-                "otherwise Rank is divided by the deduplicated number of teams in the leaderboard. "
-                "The ratio is multiplied by 100."
+                "rank, divided by the team count of the leaderboard that rank came from, "
+                "multiplied by 100."
             ),
             "score": "Score is preserved as text exactly as provided by Kaggle.",
             "authenticated_private_score": (
@@ -726,15 +604,24 @@ def build_leaderboard(
             "late_submission": (
                 "The best completed post-deadline result per team and competition, returned by "
                 "the authenticated account's My Submissions API. Score direction is inferred "
-                "from the official leaderboard; the latest result is used when direction is unknown. "
-                "Public and private late scores are merged into the competition table, including "
-                "competitions where the tracked team has no official leaderboard row. A starred late "
-                "rank compares that score with the complete leaderboard score distribution; it is not "
-                "Kaggle's official Rank."
+                "from the official leaderboard; the latest result is used when direction is "
+                "unknown. A starred late rank compares that score with the complete leaderboard "
+                "score distribution; it is not Kaggle's official Rank."
             ),
             "medal_candidate": (
-                "Shown only when Kaggle marks the competition as awarding points. It remains a rank-only "
-                "estimate: team eligibility, disqualification, verification and active standings can change it."
+                "Shown only when Kaggle marks the competition as awarding points. It remains a "
+                "rank-only estimate: team eligibility, disqualification, verification and active "
+                "standings can change it."
+            ),
+            "ongoing_board": (
+                "Official participation only. Counts gold, silver and bronze medal-zone results "
+                "and results inside the top 5 percent, then ranks by total medal-zone count and "
+                "breaks ties with the top 5 percent count."
+            ),
+            "late_board": (
+                "Post-deadline submissions only. Counts the competitions where a late score is "
+                "strictly better than the score of the original winning team, and ranks by that "
+                "count. No other late statistic is aggregated."
             ),
         },
     }

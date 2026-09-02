@@ -58,4 +58,4 @@ jobs:
           hugo --gc --minify --destination public
 
       - name: Check public artifact safety
-        run: uv run python scripts/check_public_artifact.py public
+        run: uv run python -m scripts.check_public_artifact public

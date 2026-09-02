@@ -24,6 +24,16 @@ class LegacyKaggleCredential:
 KaggleCredential = str | LegacyKaggleCredential
 
 
+def _parse_json(raw_value: str | None, name: str, kind: str) -> object | None:
+    """Parse an optional JSON secret, never echoing its value in an error."""
+    if not raw_value or not raw_value.strip():
+        return None
+    try:
+        return json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError(f"{name} is not a valid JSON {kind}") from exc
+
+
 def normalize_team_name(value: str) -> str:
     return unicodedata.normalize("NFKC", value).strip().casefold()
 
@@ -34,10 +44,7 @@ def parse_team_names(raw_value: str | None) -> tuple[str, ...]:
 
     raw_value = raw_value.strip()
     if raw_value.startswith("["):
-        try:
-            parsed = json.loads(raw_value)
-        except json.JSONDecodeError as exc:
-            raise ConfigurationError("KAGGLE_TEAMS is not a valid JSON array") from exc
+        parsed = _parse_json(raw_value, "KAGGLE_TEAMS", "array")
         if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
             raise ConfigurationError("KAGGLE_TEAMS JSON must be an array of strings")
         candidates = parsed
@@ -58,12 +65,9 @@ def parse_team_names(raw_value: str | None) -> tuple[str, ...]:
 
 
 def parse_team_aliases(raw_value: str | None) -> tuple[tuple[str, str], ...]:
-    if not raw_value or not raw_value.strip():
+    parsed = _parse_json(raw_value, "KAGGLE_TEAM_ALIASES", "object")
+    if parsed is None:
         return ()
-    try:
-        parsed = json.loads(raw_value)
-    except json.JSONDecodeError as exc:
-        raise ConfigurationError("KAGGLE_TEAM_ALIASES is not a valid JSON object") from exc
     if not isinstance(parsed, dict) or not all(
         isinstance(alias, str) and isinstance(canonical, str)
         for alias, canonical in parsed.items()
@@ -88,38 +92,27 @@ def parse_team_aliases(raw_value: str | None) -> tuple[tuple[str, str], ...]:
 
 
 def parse_api_token_array(raw_tokens: str | None) -> tuple[str, ...]:
-    if not raw_tokens or not raw_tokens.strip():
+    parsed = _parse_json(raw_tokens, "KAGGLE_API_TOKENS", "array")
+    if parsed is None:
         return ()
-    try:
-        parsed = json.loads(raw_tokens)
-    except json.JSONDecodeError as exc:
-        raise ConfigurationError("KAGGLE_API_TOKENS is not a valid JSON array") from exc
     if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
         raise ConfigurationError("KAGGLE_API_TOKENS JSON must be an array of strings")
     return tuple(dict.fromkeys(item.strip() for item in parsed if item.strip()))
 
 
 def parse_api_tokens(single_token: str | None, raw_tokens: str | None) -> tuple[str, ...]:
+    """Merge the single-account and multi-account token variables, keeping order."""
     candidates: list[str] = []
     if single_token and single_token.strip():
         candidates.append(single_token.strip())
     candidates.extend(parse_api_token_array(raw_tokens))
-
-    tokens = tuple(dict.fromkeys(candidates))
-    if not tokens:
-        raise ConfigurationError("KAGGLE_API_TOKEN or KAGGLE_API_TOKENS is required")
-    return tokens
+    return tuple(dict.fromkeys(candidates))
 
 
 def parse_legacy_credentials(raw_credentials: str | None) -> tuple[LegacyKaggleCredential, ...]:
-    if not raw_credentials or not raw_credentials.strip():
+    parsed = _parse_json(raw_credentials, "KAGGLE_LEGACY_CREDENTIALS", "array")
+    if parsed is None:
         return ()
-    try:
-        parsed = json.loads(raw_credentials)
-    except json.JSONDecodeError as exc:
-        raise ConfigurationError(
-            "KAGGLE_LEGACY_CREDENTIALS is not a valid JSON array"
-        ) from exc
     if not isinstance(parsed, list):
         raise ConfigurationError(
             "KAGGLE_LEGACY_CREDENTIALS JSON must be an array of username/key objects"
@@ -251,14 +244,11 @@ class Settings:
             raise ConfigurationError(
                 "KAGGLE_TEAMS is required unless KAGGLE_AUTO_DISCOVER_TEAMS is true"
             )
-        single_api_token = os.environ.get("KAGGLE_API_TOKEN")
         raw_api_tokens = os.environ.get("KAGGLE_API_TOKENS")
         contributor_tokens = parse_api_token_array(raw_api_tokens)
-        modern_candidates: list[str] = []
-        if single_api_token and single_api_token.strip():
-            modern_candidates.append(single_api_token.strip())
-        modern_candidates.extend(contributor_tokens)
-        modern_api_tokens = tuple(dict.fromkeys(modern_candidates))
+        modern_api_tokens = parse_api_tokens(
+            os.environ.get("KAGGLE_API_TOKEN"), raw_api_tokens
+        )
         legacy_credentials = parse_legacy_credentials(
             os.environ.get("KAGGLE_LEGACY_CREDENTIALS")
         )

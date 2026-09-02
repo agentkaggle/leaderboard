@@ -83,7 +83,7 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           KAGGLE_API_TOKENS: ${{ secrets.KAGGLE_API_TOKENS }}
           KAGGLE_LEGACY_CREDENTIALS: ${{ secrets.KAGGLE_LEGACY_CREDENTIALS }}
-        run: uv run python scripts/check_public_artifact.py public data/leaderboard.json
+        run: uv run python -m scripts.check_public_artifact public data/leaderboard.json
 
       - name: Upload Pages artifact
         id: pages-artifact

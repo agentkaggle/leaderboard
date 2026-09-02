@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="description" content="{{ .Params.description | default "跨 Kaggle 比赛聚合多个团队的官方排名、奖牌候选区与赛后提交结果。" }}">
+  <title>{{ if .IsHome }}{{ site.Title }}{{ else }}{{ .Title }} · {{ site.Title }}{{ end }}</title>
+  <link rel="icon" href="{{ "favicon.svg" | relURL }}" type="image/svg+xml">
+  {{ $css := resources.Get "css/main.css" | minify | fingerprint }}
+  <link rel="stylesheet" href="{{ $css.RelPermalink }}" integrity="{{ $css.Data.Integrity }}">
+  {{ $scripts := slice "js/app.js" }}
+  {{ if not .IsHome }}{{ $scripts = $scripts | append "js/visualizations.js" }}{{ end }}
+  {{ range $scripts }}
+    {{ $js := resources.Get . | minify | fingerprint }}
+    <script src="{{ $js.RelPermalink }}" integrity="{{ $js.Data.Integrity }}" defer></script>
+  {{ end }}
+</head>
+<body>
+  <a class="skip-link" href="#main">跳至内容</a>
+  <header class="site-header">
+    <div class="shell">
+      <a class="brand" href="{{ site.Home.RelPermalink }}">Kaggle Team Radar</a>
+      <nav aria-label="主导航">
+        <a href="{{ site.Home.RelPermalink }}"{{ if .IsHome }} aria-current="page"{{ end }}>榜单</a>
+        <a href="{{ "visualizations/" | relURL }}"{{ if not .IsHome }} aria-current="page"{{ end }}>可视化</a>
+      </nav>
+      {{ with hugo.Data.leaderboard }}
+        <p class="freshness">快照 <time class="local-time" datetime="{{ .generated_at }}">{{ .generated_at }}</time></p>
+      {{ end }}
+    </div>
+  </header>
+
+  <main id="main" class="shell">
+    {{ block "main" . }}{{ end }}
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell">
+      <p>Kaggle Team Radar · 只读公开快照 · 数据源：Kaggle 官方 API、Leaderboard CSV、My Submissions</p>
+    </div>
+  </footer>
+</body>
+</html>

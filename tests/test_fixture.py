@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import unittest
 from pathlib import Path
-from statistics import fmean
 
 from agentkaggle_leaderboard.medals import medal_candidate
 from agentkaggle_leaderboard.output import validate_public_payload
@@ -14,196 +13,122 @@ FIXTURE_PATH = Path(__file__).parent / "fixtures" / "leaderboard.json"
 
 
 class FixtureConsistencyTests(unittest.TestCase):
-    def test_fixture_metrics_are_internally_consistent(self) -> None:
-        payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
-        validate_public_payload(payload)
+    """The synthetic snapshot renders the site in CI, so it must match the live schema."""
 
-        competitions = payload["competitions"]
-        entries = [entry for competition in competitions for entry in competition["entries"]]
-        late_submissions = payload["late_submissions"]
-        summary = payload["summary"]
-        self.assertEqual(summary["matched_competition_count"], len(competitions))
-        self.assertEqual(summary["participation_count"], len(entries))
-        self.assertEqual(summary["tracked_team_count"], len(payload["teams"]))
+    def setUp(self) -> None:
+        self.payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
+        self.competitions = self.payload["competitions"]
+        self.entries = [
+            entry for competition in self.competitions for entry in competition["entries"]
+        ]
+
+    def team_entries(self, name: str) -> list[dict]:
+        return [entry for entry in self.entries if entry["team_name"] == name]
+
+    def test_fixture_matches_the_published_schema(self) -> None:
+        validate_public_payload(self.payload)
+        self.assertEqual(self.payload["schema_version"], 10)
         self.assertEqual(
-            {team["name"] for team in payload["teams"]},
-            {team["name"] for team in payload["late_teams"]},
+            self.payload["visualizations"], build_visualizations(self.competitions)
         )
-        self.assertEqual(
-            {team["name"] for team in payload["teams"]},
-            {team["name"] for team in payload["ongoing_teams"]},
-        )
+
+    def test_summary_counts_match_the_published_content(self) -> None:
+        summary = self.payload["summary"]
+        late_submissions = self.payload["late_submissions"]
+        self.assertEqual(summary["matched_competition_count"], len(self.competitions))
+        self.assertEqual(summary["participation_count"], len(self.entries))
+        self.assertEqual(summary["tracked_team_count"], len(self.payload["ongoing_teams"]))
         self.assertEqual(summary["late_submission_count"], len(late_submissions))
         self.assertEqual(
             summary["late_submission_competition_count"],
             len({entry["competition_slug"] for entry in late_submissions}),
         )
-        self.assertTrue(all(competition["entries"] for competition in competitions))
-        self.assertEqual(payload["visualizations"], build_visualizations(competitions))
+        self.assertEqual(
+            {team["name"] for team in self.payload["ongoing_teams"]},
+            {team["name"] for team in self.payload["late_teams"]},
+        )
+        self.assertTrue(all(competition["entries"] for competition in self.competitions))
 
-        for competition in competitions:
+    def test_ranks_percentages_and_medals_are_derived_consistently(self) -> None:
+        for competition in self.competitions:
             team_count = competition["leaderboard_team_count"]
             for entry in competition["entries"]:
-                if entry["late_rank"] is not None:
+                for rank_key, percent_key, count in (
+                    ("rank", "top_percent", team_count),
+                    (
+                        "authenticated_private_rank",
+                        "authenticated_private_top_percent",
+                        entry["authenticated_private_rank_team_count"],
+                    ),
+                    ("late_rank", "late_top_percent", entry["late_rank_team_count"]),
+                ):
+                    if entry[rank_key] is None:
+                        self.assertIsNone(entry[percent_key])
+                        continue
                     self.assertEqual(
-                        entry["late_top_percent"],
-                        round(
-                            entry["late_rank"] / entry["late_rank_team_count"] * 100,
-                            4,
-                        ),
+                        entry[percent_key], round(entry[rank_key] / count * 100, 4)
                     )
-                if entry["authenticated_private_rank"] is not None:
-                    self.assertEqual(
-                        entry["authenticated_private_top_percent"],
-                        round(
-                            entry["authenticated_private_rank"]
-                            / entry["authenticated_private_rank_team_count"]
-                            * 100,
-                            4,
-                        ),
-                    )
+
                 if entry["rank"] is None:
-                    self.assertIsNone(entry["top_percent"])
                     self.assertEqual(entry["score"], "")
-                    self.assertEqual(entry["submission_date"], "")
                     self.assertEqual(entry["medal_candidate"], "unavailable")
                     continue
-                self.assertEqual(entry["top_percent"], round(entry["rank"] / team_count * 100, 4))
-                medal_rank = entry["authenticated_private_rank"] or entry["rank"]
-                medal_team_count = (
-                    entry["authenticated_private_rank_team_count"] or team_count
-                )
-                expected_medal = (
-                    medal_candidate(medal_rank, medal_team_count)
-                    if competition["awards_points"]
-                    else "not_eligible"
-                )
-                self.assertEqual(entry["medal_candidate"], expected_medal)
-
-        for leaderboard_name, mode in (
-            ("teams", "overall"),
-            ("late_teams", "late"),
-            ("ongoing_teams", "ongoing"),
-        ):
-            leaderboard = payload[leaderboard_name]
-            positions = [team["position"] for team in leaderboard if team["position"] is not None]
-            self.assertEqual(positions, list(range(1, len(positions) + 1)))
-            for team in leaderboard:
-                selected_results = []
-                submission_dates = []
-                competition_count = 0
-                official_medals = 0
-                for competition in competitions:
-                    entry = next(
-                        (
-                            item
-                            for item in competition["entries"]
-                            if item["team_name"] == team["name"]
-                        ),
-                        None,
-                    )
-                    if entry is None:
-                        continue
-                    authenticated_private_result = (
-                        (
-                            entry["authenticated_private_rank"],
-                            entry["authenticated_private_top_percent"],
-                        )
-                        if entry["authenticated_private_rank"] is not None
-                        else None
-                    )
-                    official_result = authenticated_private_result or (
-                        (entry["rank"], entry["top_percent"])
-                        if entry["rank"] is not None
-                        else None
-                    )
-                    late_result = (
-                        (entry["late_rank"], entry["late_top_percent"])
-                        if entry["late_rank"] is not None
-                        else None
-                    )
-                    official_medals += entry["medal_candidate"] in {
-                        "gold",
-                        "silver",
-                        "bronze",
-                    }
-                    if mode == "ongoing":
-                        selected = official_result
-                        has_result = official_result is not None
-                        relevant_dates = (
-                            entry["authenticated_private_submission_date"]
-                            or entry["submission_date"],
-                        )
-                    elif mode == "late":
-                        selected = late_result
-                        has_result = bool(entry["late_submission_date"])
-                        relevant_dates = (entry["late_submission_date"],)
-                    else:
-                        selected = min(
-                            [
-                                result
-                                for result in (official_result, late_result)
-                                if result is not None
-                            ],
-                            key=lambda result: (result[1], result[0]),
-                            default=None,
-                        )
-                        has_result = official_result is not None or bool(
-                            entry["late_submission_date"]
-                        )
-                        relevant_dates = (
-                            entry["authenticated_private_submission_date"]
-                            or entry["submission_date"],
-                            entry["late_submission_date"],
-                        )
-                    submission_dates.extend(date for date in relevant_dates if date)
-                    competition_count += has_result
-                    if selected is not None:
-                        selected_results.append(selected)
-
-                team_late_submissions = [
-                    entry
-                    for entry in late_submissions
-                    if entry["team_name"] == team["name"]
-                ]
-                self.assertEqual(team["competition_count"], competition_count)
+                rank = entry["authenticated_private_rank"] or entry["rank"]
+                count = entry["authenticated_private_rank_team_count"] or team_count
                 self.assertEqual(
-                    team["best_rank"],
-                    min((result[0] for result in selected_results), default=None),
-                )
-                self.assertEqual(
-                    team["average_top_percent"],
-                    round(fmean(result[1] for result in selected_results), 4)
-                    if selected_results
-                    else None,
-                )
-                self.assertEqual(
-                    team["medal_candidate_count"],
-                    official_medals if mode in {"overall", "ongoing"} else 0,
-                )
-                self.assertEqual(
-                    team["late_submission_count"],
-                    len(team_late_submissions) if mode in {"overall", "late"} else 0,
-                )
-                self.assertEqual(
-                    team["last_submission_date"],
-                    max(submission_dates, default=""),
+                    entry["medal_candidate"],
+                    medal_candidate(rank, count) if competition["awards_points"] else "not_eligible",
                 )
 
-        for late_submission in late_submissions:
+    def test_ongoing_board_counts_medals_and_top_five_percent_results(self) -> None:
+        for position, team in enumerate(self.payload["ongoing_teams"], start=1):
+            entries = self.team_entries(team["name"])
+            for medal in ("gold", "silver", "bronze"):
+                self.assertEqual(
+                    team[f"{medal}_count"],
+                    sum(entry["medal_candidate"] == medal for entry in entries),
+                )
+            self.assertEqual(
+                team["medal_count"],
+                team["gold_count"] + team["silver_count"] + team["bronze_count"],
+            )
+            self.assertEqual(
+                team["top_percent_count"],
+                sum(
+                    (entry["authenticated_private_top_percent"] or entry["top_percent"] or 100)
+                    <= 5
+                    for entry in entries
+                ),
+            )
+            ranked = team["medal_count"] or team["top_percent_count"]
+            self.assertEqual(team["position"], position if ranked else None)
+
+    def test_late_board_counts_only_results_better_than_the_original_winner(self) -> None:
+        for position, team in enumerate(self.payload["late_teams"], start=1):
+            entries = self.team_entries(team["name"])
+            self.assertEqual(
+                team["beat_winner_count"],
+                sum(entry["late_beats_winner"] for entry in entries),
+            )
+            self.assertEqual(
+                team["position"], position if team["beat_winner_count"] else None
+            )
+
+    def test_every_late_submission_is_mirrored_into_its_competition(self) -> None:
+        for submission in self.payload["late_submissions"]:
             competition = next(
                 item
-                for item in competitions
-                if item["slug"] == late_submission["competition_slug"]
+                for item in self.competitions
+                if item["slug"] == submission["competition_slug"]
             )
             entry = next(
                 item
                 for item in competition["entries"]
-                if item["team_name"] == late_submission["team_name"]
+                if item["team_name"] == submission["team_name"]
             )
-            self.assertEqual(entry["late_public_score"], late_submission["public_score"])
-            self.assertEqual(entry["late_private_score"], late_submission["private_score"])
-            self.assertEqual(entry["late_submission_date"], late_submission["submission_date"])
+            self.assertEqual(entry["late_public_score"], submission["public_score"])
+            self.assertEqual(entry["late_private_score"], submission["private_score"])
+            self.assertEqual(entry["late_submission_date"], submission["submission_date"])
 
 
 if __name__ == "__main__":

@@ -2,6 +2,21 @@
   "use strict";
 
   const SVG_NS = "http://www.w3.org/2000/svg";
+  const INK = "#0b0b0b";
+  const SURFACE = "#fcfcfb";
+  // Validated light-mode categorical slots, each paired with the readable ink for
+  // a label drawn inside the mark. Identity is also carried by the initials in the
+  // mark, the legend, and the tooltip, so a repeated hue never stands alone.
+  const TEAM_COLORS = [
+    ["#2a78d6", "#ffffff"],
+    ["#eb6834", INK],
+    ["#1baf7a", INK],
+    ["#eda100", INK],
+    ["#e87ba4", INK],
+    ["#008300", "#ffffff"],
+    ["#4a3aa7", "#ffffff"],
+    ["#e34948", INK],
+  ];
   const LENS_KNOTS = [
     [0, 0],
     [80, 0.24],
@@ -31,13 +46,7 @@
       : `${characters.slice(0, maximum - 1).join("")}…`;
   };
 
-  const teamColor = (index, total) => {
-    const count = Math.max(1, Number(total) || 1);
-    const hue = (156 + (Number(index) * 360) / count) % 360;
-    const saturation = 72 + (Number(index) % 3) * 6;
-    const lightness = 60 + (Math.floor(Number(index) / 3) % 2) * 7;
-    return `hsl(${hue.toFixed(1)} ${saturation}% ${lightness}%)`;
-  };
+  const teamColor = (index) => TEAM_COLORS[Math.abs(Number(index) || 0) % TEAM_COLORS.length];
 
   const teamInitial = (value) => {
     const tokens = String(value)
@@ -94,11 +103,6 @@
     return node;
   };
 
-  const addTooltip = (node, value) => {
-    node.append(svgNode("title", {}, value));
-    return node;
-  };
-
   const readRecords = (mount) =>
     [...mount.querySelectorAll(".chart-datum")].map((datum) => ({
       competition: datum.dataset.competition || "",
@@ -119,14 +123,15 @@
   const chartFrame = (mount, width, height) => {
     const wrapper = document.createElement("div");
     wrapper.className = "chart-scroll";
+    const title = mount.dataset.chartTitle || "Kaggle quantile chart";
     const svg = svgNode("svg", {
       class: "quantile-chart-svg",
       viewBox: `0 0 ${width} ${height}`,
       role: "img",
-      "aria-label": mount.dataset.chartTitle || "Kaggle quantile chart",
+      "aria-label": title,
     });
     svg.append(
-      svgNode("title", {}, mount.dataset.chartTitle || "Kaggle quantile chart"),
+      svgNode("title", {}, title),
       svgNode(
         "desc",
         {},
@@ -142,13 +147,7 @@
     ticks.forEach((tick) => {
       const x = left + plotWidth * scaleQuantile(tick, scale);
       svg.append(
-        svgNode("line", {
-          class: "chart-grid-line",
-          x1: x,
-          y1: top,
-          x2: x,
-          y2: bottom,
-        }),
+        svgNode("line", { class: "chart-grid-line", x1: x, y1: top, x2: x, y2: bottom }),
         svgNode(
           "text",
           { class: "chart-axis-label", x, y: top - 14, "text-anchor": "middle" },
@@ -162,7 +161,7 @@
         {
           class: "chart-axis-title",
           x: left + plotWidth / 2,
-          y: top - 45,
+          y: top - 42,
           "text-anchor": "middle",
         },
         scale === "lens" ? "Quantile (%) · high-percentile lens" : "Quantile (%)",
@@ -170,23 +169,23 @@
     );
   };
 
-  const latePattern = (svg, id) => {
-    const definitions = svgNode("defs");
+  /** Diagonal texture so an estimated bar never reads as an official measurement. */
+  const latePattern = (svg, id, color) => {
     const pattern = svgNode("pattern", {
       id,
-      width: 9,
-      height: 9,
+      width: 8,
+      height: 8,
       patternUnits: "userSpaceOnUse",
     });
     pattern.append(
-      svgNode("rect", { width: 9, height: 9, fill: "#b97b25" }),
+      svgNode("rect", { width: 8, height: 8, fill: SURFACE }),
       svgNode("path", {
-        d: "M-2 2 L2 -2 M0 9 L9 0 M7 11 L11 7",
-        stroke: "#ffd27e",
+        d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
+        stroke: color,
         "stroke-width": 2,
-        opacity: 0.55,
       }),
     );
+    const definitions = svgNode("defs");
     definitions.append(pattern);
     svg.append(definitions);
   };
@@ -209,16 +208,11 @@
     tooltipNode.setAttribute("role", "tooltip");
     tooltipNode.hidden = true;
     document.body.append(tooltipNode);
-    window.addEventListener(
-      "scroll",
-      () => {
-        tooltipNode.hidden = true;
-      },
-      { capture: true, passive: true },
-    );
-    window.addEventListener("resize", () => {
+    const hide = () => {
       tooltipNode.hidden = true;
-    });
+    };
+    window.addEventListener("scroll", hide, { capture: true, passive: true });
+    window.addEventListener("resize", hide);
     return tooltipNode;
   };
 
@@ -242,10 +236,7 @@
       ["Quantile", `Q${record.quantile.toFixed(2)}`],
       ["Top", `${record.topPercent.toFixed(2)}%`],
     ].forEach(([term, value]) => {
-      details.append(
-        tooltipTextNode("dt", "", term),
-        tooltipTextNode("dd", "", value),
-      );
+      details.append(tooltipTextNode("dt", "", term), tooltipTextNode("dd", "", value));
     });
     tooltip.replaceChildren(
       tooltipTextNode("span", "chart-tooltip-competition", record.competition),
@@ -286,9 +277,7 @@
       fillTooltip(tooltip, record);
       positionTooltip(tooltip, clientX, clientY);
     };
-    node.addEventListener("pointerenter", (event) => {
-      showAt(event.clientX, event.clientY);
-    });
+    node.addEventListener("pointerenter", (event) => showAt(event.clientX, event.clientY));
     node.addEventListener("pointermove", (event) => {
       if (!tooltip.hidden) positionTooltip(tooltip, event.clientX, event.clientY);
     });
@@ -303,99 +292,89 @@
       tooltip.hidden = true;
     });
     node.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        tooltip.hidden = true;
-      }
+      if (event.key === "Escape") tooltip.hidden = true;
     });
     return node;
   };
 
   const renderBarChart = (mount, records) => {
     const width = 1180;
-    const left = 310;
-    const plotWidth = 610;
+    const left = 300;
+    const plotWidth = 620;
     const right = left + plotWidth;
-    const top = 92;
-    const rowHeight = 66;
+    const top = 88;
+    const rowHeight = 54;
+    const barHeight = 22;
     const bottom = top + records.length * rowHeight;
-    const height = Math.max(280, bottom + 54);
+    const height = bottom + 40;
     const svg = chartFrame(mount, width, height);
+    const [barColor] = teamColor(0);
     const patternId = `late-bars-${mount.dataset.chartState || "chart"}`;
-    latePattern(svg, patternId);
-    addAxis(svg, {
-      left,
-      top,
-      plotWidth,
-      bottom,
-      ticks: [0, 20, 40, 60, 80, 100],
-      scale: "linear",
-    });
+    latePattern(svg, patternId, barColor);
+    addAxis(svg, { left, top, plotWidth, bottom, ticks: [0, 20, 40, 60, 80, 100], scale: "linear" });
 
     records.forEach((record, index) => {
-      const y = top + 18 + index * rowHeight;
+      const y = top + 12 + index * rowHeight;
       const barWidth = plotWidth * scaleQuantile(record.quantile);
       if (index % 2 === 0) {
         svg.append(
           svgNode("rect", {
             class: "chart-row-band",
             x: 14,
-            y: y - 13,
+            y: y - 12,
             width: width - 28,
-            height: 56,
-            rx: 5,
+            height: rowHeight - 6,
           }),
         );
       }
+      const bar = bindRecordTooltip(
+        svgNode("rect", {
+          x: left,
+          y,
+          width: Math.max(2, barWidth),
+          height: barHeight,
+          rx: 4,
+          fill: record.official ? barColor : `url(#${patternId})`,
+          ...(record.official ? {} : { stroke: barColor, "stroke-width": 1 }),
+        }),
+        record,
+      );
+      // Keep the value off the rank column: park it inside the bar once it is long.
+      const valueInside = barWidth >= 78;
       svg.append(
         svgNode(
           "text",
-          { class: "chart-row-title", x: 24, y: y + 5 },
+          { class: "chart-row-title", x: 24, y: y + 4 },
           truncateLabel(record.competition),
         ),
         svgNode(
           "text",
-          { class: "chart-row-meta", x: 24, y: y + 27 },
+          { class: "chart-row-meta", x: 24, y: y + 22 },
           truncateLabel(`${record.team} · ${scoreSourceLabel(record)} ${record.score}`, 41),
         ),
-      );
-      const bar = bindRecordTooltip(
-        addTooltip(
-          svgNode("rect", {
-            x: left,
-            y,
-            width: Math.max(2, barWidth),
-            height: 34,
-            rx: 4,
-            fill: record.official ? "#39e6b0" : `url(#${patternId})`,
-            stroke: record.official ? "#82f3cf" : "#ffc563",
-            "stroke-width": 1,
-          }),
-          resultTooltip(record),
-        ),
-        record,
-      );
-      const valueInside = barWidth >= 82;
-      svg.append(
         bar,
         svgNode(
           "text",
           {
-            class: valueInside ? "chart-bar-value chart-bar-value-inside" : "chart-bar-value",
-            x: valueInside ? left + barWidth - 9 : left + barWidth + 9,
-            y: y + 22,
+            class:
+              valueInside && record.official
+                ? "chart-bar-value chart-bar-value-inside"
+                : "chart-bar-value",
+            x: valueInside ? left + barWidth - 8 : left + barWidth + 8,
+            y: y + 16,
             "text-anchor": valueInside ? "end" : "start",
           },
           `Q ${record.quantile.toFixed(2)}`,
         ),
         svgNode(
           "text",
-          { class: "chart-rank-label", x: right + 20, y: y + 7 },
+          { class: "chart-rank-label", x: right + 20, y: y + 6 },
           `${rankSourceLabel(record)} · #${record.rank.toLocaleString()} / ` +
             record.teamCount.toLocaleString(),
         ),
         svgNode(
           "text",
-          { class: "chart-row-meta", x: right + 20, y: y + 29 },
+          { class: "chart-row-meta", x: right + 20, y: y + 24 },
           `Top ${record.topPercent.toFixed(2)}% · ${scoreSourceLabel(record)}`,
         ),
       );
@@ -414,17 +393,17 @@
       if (!grouped.has(record.competition)) grouped.set(record.competition, []);
       grouped.get(record.competition).push(record);
     });
-    const teams = [...new Set(records.map((record) => record.team))].sort((a, b) =>
-      a.localeCompare(b, "zh-CN"),
+    const teams = [...new Set(records.map((record) => record.team))].sort((left, right) =>
+      left.localeCompare(right, "zh-CN"),
     );
-    const width = 1280;
-    const left = 310;
-    const plotWidth = 850;
-    const top = 94;
+    const width = 1180;
+    const left = 300;
+    const plotWidth = 840;
+    const top = 88;
     const rowLayouts = [...grouped.entries()].map(([competition, groupRecords]) => ({
       competition,
       records: groupRecords,
-      height: Math.max(82, 44 + groupRecords.length * 24),
+      height: Math.max(78, 40 + groupRecords.length * 24),
     }));
     let cursor = top;
     rowLayouts.forEach((row) => {
@@ -434,9 +413,8 @@
     });
     const plotBottom = cursor;
     const legendColumns = 4;
-    const legendRows = Math.ceil(teams.length / legendColumns);
-    const legendHeight = 68 + legendRows * 30;
-    const height = Math.max(330, plotBottom + legendHeight);
+    const legendHeight = 64 + Math.ceil(teams.length / legendColumns) * 28;
+    const height = plotBottom + legendHeight;
     const svg = chartFrame(mount, width, height);
     const scale = mount.dataset.chartScale || "linear";
     addAxis(svg, {
@@ -457,7 +435,6 @@
             y: row.top + 4,
             width: width - 28,
             height: row.height - 8,
-            rx: 5,
           }),
         );
       }
@@ -469,7 +446,7 @@
         ),
         svgNode(
           "text",
-          { class: "chart-row-meta", x: 24, y: row.center + 19 },
+          { class: "chart-row-meta", x: 24, y: row.center + 17 },
           `${row.records.length} account result${row.records.length === 1 ? "" : "s"}`,
         ),
         svgNode("line", {
@@ -485,36 +462,31 @@
       row.records.forEach((record, index) => {
         const x = left + plotWidth * scaleQuantile(record.quantile, scale);
         const y = row.center + offsets[index];
-        const color = teamColors.get(record.team) || "#39e6b0";
+        const [color, ink] = teamColors.get(record.team) || TEAM_COLORS[0];
         const marker = bindRecordTooltip(
-          addTooltip(
-            svgNode("circle", {
-              cx: x,
-              cy: y,
-              r: record.official ? 10 : 9.5,
-              fill: record.official ? color : "#0c1a21",
-              stroke: color,
-              "stroke-width": record.official ? 2 : 3.5,
-            }),
-            resultTooltip(record),
-          ),
+          svgNode("circle", {
+            cx: x,
+            cy: y,
+            r: 9,
+            fill: record.official ? color : SURFACE,
+            stroke: record.official ? SURFACE : color,
+            "stroke-width": record.official ? 2 : 3,
+          }),
           record,
         );
         marker.dataset.team = record.team;
-        const highlightRing = svgNode("circle", {
-          class: "chart-team-highlight-ring",
-          cx: x,
-          cy: y,
-          r: 15,
-          fill: "none",
-          stroke: "#fff",
-          "stroke-width": 3,
-          "data-team": record.team,
-          "aria-hidden": "true",
-        });
-        const labelOnLeft = x > left + plotWidth - 120;
         svg.append(
-          highlightRing,
+          svgNode("circle", {
+            class: "chart-team-highlight-ring",
+            cx: x,
+            cy: y,
+            r: 14,
+            fill: "none",
+            stroke: INK,
+            "stroke-width": 2,
+            "data-team": record.team,
+            "aria-hidden": "true",
+          }),
           marker,
           svgNode(
             "text",
@@ -522,38 +494,41 @@
               class: "chart-point-initial",
               x,
               y,
-              fill: record.official ? "#061612" : color,
+              fill: record.official ? ink : color,
             },
             teamInitial(record.team),
-          ),
-          svgNode(
-            "text",
-            {
-              class: "chart-point-label",
-              x: labelOnLeft ? x - 15 : x + 15,
-              y: y + 4,
-              "text-anchor": labelOnLeft ? "end" : "start",
-            },
-            record.score,
           ),
         );
       });
     });
 
-    const legendTop = plotBottom + 28;
+    const legendTop = plotBottom + 26;
+    const [sampleColor] = TEAM_COLORS[0];
     svg.append(
-      svgNode("circle", { cx: 28, cy: legendTop, r: 6, fill: "#39e6b0", stroke: "#39e6b0" }),
+      svgNode("circle", {
+        cx: 28,
+        cy: legendTop,
+        r: 6,
+        fill: sampleColor,
+        stroke: SURFACE,
+        "stroke-width": 2,
+      }),
       svgNode("text", { class: "chart-legend-label", x: 42, y: legendTop + 4 }, "Official rank"),
-      svgNode("circle", { cx: 160, cy: legendTop, r: 6, fill: "#0c1a21", stroke: "#ffc563", "stroke-width": 3 }),
-      svgNode("text", { class: "chart-legend-label", x: 174, y: legendTop + 4 }, "Late estimate*"),
+      svgNode("circle", {
+        cx: 170,
+        cy: legendTop,
+        r: 6,
+        fill: SURFACE,
+        stroke: sampleColor,
+        "stroke-width": 3,
+      }),
+      svgNode("text", { class: "chart-legend-label", x: 184, y: legendTop + 4 }, "Late estimate*"),
     );
     teams.forEach((team, index) => {
-      const column = index % legendColumns;
-      const row = Math.floor(index / legendColumns);
-      const x = 28 + column * 290;
-      const y = legendTop + 36 + row * 30;
-      const color = teamColors.get(team);
-      const legendControl = svgNode("g", {
+      const x = 28 + (index % legendColumns) * 280;
+      const y = legendTop + 34 + Math.floor(index / legendColumns) * 28;
+      const [color, ink] = teamColors.get(team) || TEAM_COLORS[0];
+      const control = svgNode("g", {
         class: "chart-legend-control",
         role: "button",
         tabindex: 0,
@@ -561,19 +536,12 @@
         "aria-pressed": "false",
         "data-team": team,
       });
-      legendControl.append(
-        svgNode("circle", {
-          cx: x,
-          cy: y,
-          r: 9,
-          fill: color,
-          stroke: "#dffaf2",
-          "stroke-width": 1,
-        }),
-        svgNode("text", { class: "chart-legend-initial", x, y }, teamInitial(team)),
-        svgNode("text", { class: "chart-legend-label", x: x + 16, y: y + 4 }, truncateLabel(team, 28)),
+      control.append(
+        svgNode("circle", { cx: x, cy: y, r: 8, fill: color }),
+        svgNode("text", { class: "chart-legend-initial", x, y, fill: ink }, teamInitial(team)),
+        svgNode("text", { class: "chart-legend-label", x: x + 15, y: y + 4 }, truncateLabel(team, 28)),
       );
-      svg.append(legendControl);
+      svg.append(control);
     });
   };
 
@@ -601,7 +569,7 @@
     document.querySelectorAll(".chart-legend-control").forEach((control) => {
       control.addEventListener("click", () => toggle(control.dataset.team || ""));
       control.addEventListener("keydown", (event) => {
-        if (!['Enter', ' '].includes(event.key)) return;
+        if (!["Enter", " "].includes(event.key)) return;
         event.preventDefault();
         toggle(control.dataset.team || "");
       });
@@ -618,10 +586,8 @@
       ),
     ]
       .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b, "zh-CN"));
-    const teamColors = new Map(
-      allTeams.map((team, index) => [team, teamColor(index, allTeams.length)]),
-    );
+      .sort((left, right) => left.localeCompare(right, "zh-CN"));
+    const teamColors = new Map(allTeams.map((team, index) => [team, teamColor(index)]));
 
     mounts.forEach((mount) => {
       const records = readRecords(mount);

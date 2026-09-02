@@ -3,84 +3,152 @@ const path = require("node:path");
 const test = require("node:test");
 
 class FakeElement {
-  constructor({ dataset = {}, value = "" } = {}) {
-    this.children = [];
+  constructor(dataset = {}, value = "") {
     this.dataset = dataset;
-    this.listeners = new Map();
     this.value = value;
+    this.children = [];
+    this.listeners = new Map();
+    this.hidden = false;
+    this.textContent = "";
   }
 
   addEventListener(type, listener) {
-    const listeners = this.listeners.get(type) || [];
-    listeners.push(listener);
-    this.listeners.set(type, listeners);
-  }
-
-  append(...elements) {
-    elements.forEach((element) => {
-      const currentIndex = this.children.indexOf(element);
-      if (currentIndex !== -1) this.children.splice(currentIndex, 1);
-      this.children.push(element);
-    });
+    this.listeners.set(type, [...(this.listeners.get(type) || []), listener]);
   }
 
   dispatch(type) {
     (this.listeners.get(type) || []).forEach((listener) => listener({ type }));
   }
+
+  append(...nodes) {
+    this.children.push(...nodes);
+  }
 }
 
-const makeRow = (team, lastSubmissionDate) =>
-  new FakeElement({ dataset: { team, lastSubmissionDate } });
+const makeTimeElement = (className, dateTime) => ({
+  dateTime,
+  textContent: dateTime,
+  classList: { contains: (name) => name === className },
+});
 
-const makeBoard = (name, rows) => {
-  const body = new FakeElement();
-  body.children = [...rows];
-  body.querySelectorAll = (selector) =>
-    selector === "tr[data-last-submission-date]" ? body.children : [];
-
-  const board = new FakeElement({ dataset: { teamBoard: name } });
-  board.querySelector = (selector) => (selector === "tbody" ? body : null);
-  return { board, body };
+const makeCard = (dataset, teams) => {
+  const card = new FakeElement(dataset);
+  const rows = teams.map((team) => new FakeElement({ team }));
+  card.querySelector = (selector) =>
+    rows.find((row) => selector === `[data-team="${row.dataset.team}"]`) || null;
+  card.querySelectorAll = (selector) => (selector === "tbody tr[data-team]" ? rows : []);
+  card.rows = rows;
+  return card;
 };
 
-test("team overview sorts each board by its mode-specific last update time", (t) => {
-  const overall = makeBoard("overall", [
-    makeRow("Alpha", "2026-07-01T00:00:00Z"),
-    makeRow("Beta", "2026-07-10T00:00:00Z"),
-    makeRow("Gamma", ""),
-    makeRow("Delta", "invalid"),
-  ]);
-  const late = makeBoard("late", [
-    makeRow("Alpha", "2026-07-12T00:00:00Z"),
-    makeRow("Beta", "2026-07-02T00:00:00Z"),
-    makeRow("Gamma", ""),
-  ]);
-  const teamSortOrder = new FakeElement({ value: "updated-desc" });
-
+const loadApp = (t, elements, cards, times = []) => {
+  const controls = new Map(Object.entries(elements));
+  global.CSS = { escape: (value) => value };
   global.document = {
-    querySelector: (selector) => (selector === "#team-sort-order" ? teamSortOrder : null),
+    querySelector: (selector) => controls.get(selector) || null,
     querySelectorAll: (selector) => {
-      if (selector === "[data-team-board]") return [overall.board, late.board];
+      if (selector === ".competition") return cards;
+      if (selector === ".local-date, .local-time") return times;
       return [];
     },
+    createElement: () => new FakeElement(),
   };
-  t.after(() => delete global.document);
+  t.after(() => {
+    delete global.document;
+    delete global.CSS;
+  });
 
   const appPath = path.resolve(__dirname, "../assets/js/app.js");
   delete require.cache[require.resolve(appPath)];
   require(appPath);
+};
 
-  const teams = (body) => body.children.map((row) => row.dataset.team);
-  assert.deepEqual(teams(overall.body), ["Beta", "Alpha", "Gamma", "Delta"]);
-  assert.deepEqual(teams(late.body), ["Alpha", "Beta", "Gamma"]);
+const filterFixture = (t) => {
+  const elements = {
+    "#search": new FakeElement(),
+    "#team-filter": new FakeElement(),
+    "#category-filter": new FakeElement(),
+    "#state-filter": new FakeElement(),
+    "#result-count": new FakeElement(),
+    "#filter-empty": new FakeElement(),
+  };
+  const cards = [
+    makeCard(
+      { title: "vision cup", category: "Featured", state: "active", teams: "alpha|beta|" },
+      ["Alpha", "Beta"],
+    ),
+    makeCard(
+      { title: "signal cup", category: "Playground", state: "ended", teams: "beta|" },
+      ["Beta"],
+    ),
+  ];
+  loadApp(t, elements, cards);
+  return { elements, cards };
+};
 
-  teamSortOrder.value = "updated-asc";
-  teamSortOrder.dispatch("change");
-  assert.deepEqual(teams(overall.body), ["Alpha", "Beta", "Gamma", "Delta"]);
-  assert.deepEqual(teams(late.body), ["Beta", "Alpha", "Gamma"]);
+test("timestamps are rendered in the reader's locale", (t) => {
+  const times = [
+    makeTimeElement("local-date", "2026-07-16T08:42:00Z"),
+    makeTimeElement("local-time", "2026-07-16T08:42:00Z"),
+    makeTimeElement("local-date", "not-a-date"),
+  ];
+  loadApp(t, {}, [], times);
 
-  teamSortOrder.value = "ranking";
-  teamSortOrder.dispatch("change");
-  assert.deepEqual(teams(overall.body), ["Alpha", "Beta", "Gamma", "Delta"]);
-  assert.deepEqual(teams(late.body), ["Alpha", "Beta", "Gamma"]);
+  assert.match(times[0].textContent, /2026/u);
+  assert.match(times[1].textContent, /2026/u);
+  assert.ok(times[1].textContent.length > times[0].textContent.length);
+  assert.equal(times[2].textContent, "not-a-date");
+});
+
+test("the category filter is built from the rendered competitions", (t) => {
+  const { elements } = filterFixture(t);
+  assert.deepEqual(
+    elements["#category-filter"].children.map((option) => option.value),
+    ["Featured", "Playground"],
+  );
+});
+
+test("search, team, category and state filters narrow the competition list", (t) => {
+  const { elements, cards } = filterFixture(t);
+  const visible = () => cards.filter((card) => !card.hidden).map((card) => card.dataset.title);
+
+  elements["#search"].value = "vision";
+  elements["#search"].dispatch("input");
+  assert.deepEqual(visible(), ["vision cup"]);
+  assert.equal(elements["#result-count"].textContent, "显示 1 / 2 场");
+  assert.equal(elements["#filter-empty"].hidden, true);
+
+  elements["#search"].value = "";
+  elements["#state-filter"].value = "ended";
+  elements["#state-filter"].dispatch("change");
+  assert.deepEqual(visible(), ["signal cup"]);
+
+  elements["#state-filter"].value = "";
+  elements["#category-filter"].value = "Featured";
+  elements["#category-filter"].dispatch("change");
+  assert.deepEqual(visible(), ["vision cup"]);
+
+  elements["#category-filter"].value = "";
+  elements["#search"].value = "nothing matches";
+  elements["#search"].dispatch("input");
+  assert.deepEqual(visible(), []);
+  assert.equal(elements["#filter-empty"].hidden, false);
+});
+
+test("a team filter also hides the other teams' rows inside a competition", (t) => {
+  const { elements, cards } = filterFixture(t);
+
+  elements["#team-filter"].value = "Beta";
+  elements["#team-filter"].dispatch("change");
+  assert.deepEqual(
+    cards.map((card) => card.rows.filter((row) => !row.hidden).map((row) => row.dataset.team)),
+    [["Beta"], ["Beta"]],
+  );
+
+  elements["#team-filter"].value = "Alpha";
+  elements["#team-filter"].dispatch("change");
+  assert.deepEqual(
+    cards.map((card) => card.hidden),
+    [false, true],
+  );
 });

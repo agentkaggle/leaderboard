@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
+
+from agentkaggle_leaderboard.settings import (
+    credential_secret_values,
+    parse_api_tokens,
+    parse_legacy_credentials,
+)
 
 
 TEXT_SUFFIXES = {".html", ".css", ".js", ".json", ".txt", ".xml", ".svg"}
@@ -69,56 +74,21 @@ def scan(
 
 
 def credential_values_from_environment() -> tuple[str, ...]:
-    credentials: list[str] = []
-    single_token = os.environ.get("KAGGLE_API_TOKEN")
-    if single_token and single_token.strip():
-        credentials.append(single_token.strip())
-
-    raw_tokens = os.environ.get("KAGGLE_API_TOKENS")
-    if raw_tokens and raw_tokens.strip():
-        try:
-            parsed_tokens = json.loads(raw_tokens)
-        except json.JSONDecodeError as exc:
-            raise ValueError("KAGGLE_API_TOKENS is not a valid JSON array") from exc
-        if not isinstance(parsed_tokens, list) or not all(
-            isinstance(item, str) for item in parsed_tokens
-        ):
-            raise ValueError("KAGGLE_API_TOKENS JSON must be an array of strings")
-        credentials.extend(item.strip() for item in parsed_tokens if item.strip())
-
-    raw_legacy_credentials = os.environ.get("KAGGLE_LEGACY_CREDENTIALS")
-    if raw_legacy_credentials and raw_legacy_credentials.strip():
-        try:
-            parsed_legacy_credentials = json.loads(raw_legacy_credentials)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                "KAGGLE_LEGACY_CREDENTIALS is not a valid JSON array"
-            ) from exc
-        if not isinstance(parsed_legacy_credentials, list):
-            raise ValueError(
-                "KAGGLE_LEGACY_CREDENTIALS JSON must be an array of username/key objects"
+    """Collect every secret value that must never appear in a public artifact."""
+    values = [
+        *parse_api_tokens(
+            os.environ.get("KAGGLE_API_TOKEN"),
+            os.environ.get("KAGGLE_API_TOKENS"),
+        ),
+        *(
+            secret
+            for credential in parse_legacy_credentials(
+                os.environ.get("KAGGLE_LEGACY_CREDENTIALS")
             )
-        for item in parsed_legacy_credentials:
-            if not isinstance(item, dict) or set(item) != {"username", "key"}:
-                raise ValueError(
-                    "KAGGLE_LEGACY_CREDENTIALS JSON must be an array of "
-                    "username/key objects"
-                )
-            username = item["username"]
-            key = item["key"]
-            if (
-                not isinstance(username, str)
-                or not isinstance(key, str)
-                or not username.strip()
-                or not key.strip()
-            ):
-                raise ValueError(
-                    "KAGGLE_LEGACY_CREDENTIALS username and key values must be "
-                    "non-empty strings"
-                )
-            credentials.append(key.strip())
-
-    return tuple(dict.fromkeys(credentials))
+            for secret in credential_secret_values(credential)
+        ),
+    ]
+    return tuple(dict.fromkeys(value.strip() for value in values if value.strip()))
 
 
 def main(argv: list[str] | None = None) -> int:

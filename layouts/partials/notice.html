@@ -1,0 +1,22 @@
+{{ if ne .status "ready" }}
+  {{ $labels := dict
+    "not_found" "已在公开目录中发现，但 Kaggle 当前未提供可下载榜单（404）"
+    "access_denied" "被 Kaggle 拒绝访问（401/403）"
+    "rate_limited" "重试后仍被 Kaggle 限流（429）"
+    "network" "因网络连接或超时未完成"
+    "unsafe_private_leaderboard" "返回了尚不可公开的 Private Leaderboard，已拒绝发布"
+    "invalid_response" "返回的榜单格式无法安全解析"
+    "unexpected" "发生未分类错误，已安全跳过"
+  }}
+  <aside class="notice" role="status">
+    <p><strong>当前是部分扫描快照。</strong>成功扫描 {{ .summary.scanned_competition_count }} / {{ .summary.discovered_competition_count }} 场{{ if .summary.truncated }}；本次设置了比赛数量上限{{ end }}。</p>
+    {{ with .summary.error_counts }}
+      <ul>
+        {{ range $kind, $count := . }}<li>{{ $count }} 场{{ index $labels $kind | default "发生未分类错误" }}。</li>{{ end }}
+      </ul>
+    {{ end }}
+    {{ if gt .summary.failed_late_submission_account_count 0 }}
+      <p>{{ .summary.failed_late_submission_account_count }} / {{ .summary.late_submission_account_count }} 个授权账户未能完成赛后提交扫描，其余账户的结果仍保留。</p>
+    {{ end }}
+  </aside>
+{{ end }}

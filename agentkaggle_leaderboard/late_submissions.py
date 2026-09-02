@@ -20,6 +20,21 @@ from .models import (
 from .settings import normalize_team_name
 
 
+def _deduplicated(entries, sort_key):
+    """Collapse identical submissions from overlapping accounts, then order them."""
+    unique = {
+        (
+            entry.competition_slug,
+            entry.configured_team_name,
+            entry.submission_date,
+            entry.public_score,
+            entry.private_score,
+        ): entry
+        for entry in entries
+    }
+    return tuple(sorted(unique.values(), key=sort_key))
+
+
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
@@ -242,49 +257,23 @@ class KaggleLateSubmissionSource(_KaggleRequestSource):
             for team_key, team_name in competition_teams.items():
                 discovered_teams.setdefault(team_key, team_name)
 
-        unique = {
-            (
-                entry.competition_slug,
-                entry.configured_team_name,
-                entry.submission_date,
-                entry.public_score,
-                entry.private_score,
-            ): entry
-            for entry in collected
-        }
-        entries = tuple(
-            sorted(
-                unique.values(),
-                key=lambda entry: (
+        return LateSubmissionScan(
+            entries=_deduplicated(
+                collected,
+                lambda entry: (
                     -entry.submission_date.timestamp(),
                     entry.competition_title.casefold(),
                     entry.configured_team_name.casefold(),
                 ),
-            )
-        )
-        unique_authenticated_scores = {
-            (
-                entry.competition_slug,
-                entry.configured_team_name,
-                entry.submission_date,
-                entry.public_score,
-                entry.private_score,
-            ): entry
-            for entry in collected_authenticated_scores
-        }
-        authenticated_scores = tuple(
-            sorted(
-                unique_authenticated_scores.values(),
-                key=lambda entry: (
+            ),
+            authenticated_scores=_deduplicated(
+                collected_authenticated_scores,
+                lambda entry: (
                     entry.competition_slug,
                     entry.configured_team_name.casefold(),
                     -entry.submission_date.timestamp(),
                 ),
-            )
-        )
-        return LateSubmissionScan(
-            entries=entries,
-            authenticated_scores=authenticated_scores,
+            ),
             discovered_team_names=tuple(discovered_teams.values()),
             entered_competitions=entered_competitions,
         )

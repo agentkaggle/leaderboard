@@ -38,10 +38,12 @@ test("point offsets stay centered and labels truncate by Unicode character", () 
   assert.equal(truncateLabel("比赛成绩分布", 5), "比赛成绩…");
 });
 
-test("every account receives a distinct color and a stable short label", () => {
-  const colors = Array.from({ length: 24 }, (_, index) => teamColor(index, 24));
-  assert.equal(new Set(colors).size, colors.length);
-  assert.equal(teamColor(7, 24), teamColor(7, 24));
+test("accounts take validated palette slots and a stable short label", () => {
+  const slots = Array.from({ length: 8 }, (_, index) => teamColor(index)[0]);
+  assert.equal(new Set(slots).size, slots.length);
+  assert.deepEqual(teamColor(8), teamColor(0));
+  assert.deepEqual(teamColor(3), teamColor(3));
+  assert.equal(teamColor(0)[1], "#ffffff");
   assert.equal(teamInitial("FlameZywoo"), "F");
   assert.equal(teamInitial("Changye Li"), "CL");
   assert.equal(teamInitial("Bayes & Beyond"), "BB");
