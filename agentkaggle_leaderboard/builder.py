@@ -40,21 +40,22 @@ EXCLUDED_COMPETITION_SLUGS = frozenset(
 # Maps a Kaggle team/account name to the student's display name, so every
 # team a student competes under is shown and ranked as one person.
 STUDENT_NAMES_BY_TEAM = {
-    "FlameZywoo": "李孟涵",
-    "zgdllt": "李孟涵",
-    "Hutao715": "Liu Yitong",
-    "henrytb": "黄镜元",
-    "Jingyuan Huang": "黄镜元",
-    "WestLakeDiver": "何宸禹",
-    "TeamDock": "Boshi Zhang",
-    "SoraGinko": "tingjun wu",
-    "lynx": "郭洪恺",
-    "Lynx Guo": "郭洪恺",
-    "pones_kaggle": "yi duo pang",
-    "Pones": "yi duo pang",
-    "PYD966": "yi duo pang",
-    "kimlim": "Justin 林钲凯",
-    "Justin Kimlim": "Justin 林钲凯",
+    "FlameZywoo": "MenghanLi",
+    "zgdllt": "MenghanLi",
+    "Hutao715": "LiuYitong",
+    "henrytb": "HuangJingyuan",
+    "Jingyuan Huang": "HuangJingyuan",
+    "WestLakeDiver": "HeChenyu",
+    "TeamDock": "BoshiZhang",
+    "SoraGinko": "TingjunWu",
+    "lynx": "GuoHongkai",
+    "Lynx Guo": "GuoHongkai",
+    "pones_kaggle": "YiDuoPang",
+    "Pones": "YiDuoPang",
+    "PYD966": "YiDuoPang",
+    "kimlim": "JustinZhengkaiLin",
+    "Justin Kimlim": "JustinZhengkaiLin",
+    "muheng": "Muheng",
 }
 _STUDENT_NAME_BY_NORMALIZED_TEAM = {
     normalize_team_name(team): student for team, student in STUDENT_NAMES_BY_TEAM.items()
