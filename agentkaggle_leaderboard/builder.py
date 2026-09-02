@@ -37,6 +37,32 @@ EXCLUDED_COMPETITION_SLUGS = frozenset(
         "restaurant-revenue-prediction2",
     }
 )
+# Maps a Kaggle team/account name to the student's display name, so every
+# team a student competes under is shown and ranked as one person.
+STUDENT_NAMES_BY_TEAM = {
+    "FlameZywoo": "李孟涵",
+    "zgdllt": "李孟涵",
+    "Hutao715": "Liu Yitong",
+    "henrytb": "黄镜元",
+    "Jingyuan Huang": "黄镜元",
+    "WestLakeDiver": "何宸禹",
+    "TeamDock": "Boshi Zhang",
+    "SoraGinko": "tingjun wu",
+    "lynx": "郭洪恺",
+    "Lynx Guo": "郭洪恺",
+    "pones_kaggle": "yi duo pang",
+    "Pones": "yi duo pang",
+    "PYD966": "yi duo pang",
+    "kimlim": "Justin 林钲凯",
+    "Justin Kimlim": "Justin 林钲凯",
+}
+_STUDENT_NAME_BY_NORMALIZED_TEAM = {
+    normalize_team_name(team): student for team, student in STUDENT_NAMES_BY_TEAM.items()
+}
+
+
+def _display_team_name(team_name: str) -> str:
+    return _STUDENT_NAME_BY_NORMALIZED_TEAM.get(normalize_team_name(team_name), team_name)
 
 
 def _iso_utc(value: datetime | None) -> str:
@@ -123,7 +149,7 @@ def _public_competition(
 ) -> dict[str, object]:
     best_by_team: dict[str, LeaderboardEntry] = {}
     for match in snapshot.matches if snapshot is not None else ():
-        key = normalize_team_name(match.configured_team_name)
+        key = normalize_team_name(_display_team_name(match.configured_team_name))
         existing = best_by_team.get(key)
         if existing is None or match.rank < existing.rank:
             best_by_team[key] = match
@@ -134,7 +160,7 @@ def _public_competition(
             best_by_team.values(),
             key=lambda item: (item.rank, item.configured_team_name),
         ):
-            entry = _new_entry(match.configured_team_name)
+            entry = _new_entry(_display_team_name(match.configured_team_name))
             entry.update(
                 rank=match.rank,
                 top_percent=round((match.rank / snapshot.team_count) * 100, 4),
@@ -187,7 +213,10 @@ def _public_late_submissions(
 
     unique: dict[tuple[str, str], LateSubmissionEntry] = {}
     for entry in late_submissions:
-        key = (entry.competition_slug, normalize_team_name(entry.configured_team_name))
+        key = (
+            entry.competition_slug,
+            normalize_team_name(_display_team_name(entry.configured_team_name)),
+        )
         existing = unique.get(key)
         if existing is None or is_better(entry, existing):
             unique[key] = entry
@@ -198,7 +227,7 @@ def _public_late_submissions(
             "competition_title": entry.competition_title,
             "competition_url": entry.competition_url,
             "deadline": _iso_utc(entry.deadline),
-            "team_name": entry.configured_team_name,
+            "team_name": _display_team_name(entry.configured_team_name),
             "public_score": entry.public_score,
             "private_score": entry.private_score,
             "submission_date": _iso_utc(entry.submission_date),
@@ -208,7 +237,7 @@ def _public_late_submissions(
             key=lambda entry: (
                 -entry.submission_date.timestamp(),
                 entry.competition_title.casefold(),
-                entry.configured_team_name.casefold(),
+                _display_team_name(entry.configured_team_name).casefold(),
             ),
         )
     ]
@@ -235,7 +264,10 @@ def _merge_authenticated_private_scores(
 ) -> int:
     scores_by_team: dict[tuple[str, str], list[AuthenticatedSubmissionScoreEntry]] = {}
     for score in authenticated_scores:
-        key = (score.competition_slug, normalize_team_name(score.configured_team_name))
+        key = (
+            score.competition_slug,
+            normalize_team_name(_display_team_name(score.configured_team_name)),
+        )
         scores_by_team.setdefault(key, []).append(score)
 
     matched_count = 0
@@ -581,6 +613,7 @@ def build_leaderboard(
     )
 
     truncated = max_competitions is not None and len(competitions) >= max_competitions
+    display_teams = tuple(dict.fromkeys(_display_team_name(team) for team in settings.teams))
     return {
         "schema_version": 10,
         "generated_at": _iso_utc(generated_at),
@@ -588,7 +621,7 @@ def build_leaderboard(
             "partial" if failures or late_submission_failure_kinds or truncated else "ready"
         ),
         "summary": {
-            "tracked_team_count": len(settings.teams),
+            "tracked_team_count": len(display_teams),
             "discovered_competition_count": len(competitions),
             "scanned_competition_count": len(snapshots),
             "failed_competition_count": len(failures),
@@ -605,8 +638,8 @@ def build_leaderboard(
             "truncated": truncated,
             "error_counts": dict(sorted(Counter(failure.kind for failure in failures).items())),
         },
-        "ongoing_teams": _ongoing_board(settings.teams, public_competitions),
-        "late_teams": _late_board(settings.teams, public_competitions),
+        "ongoing_teams": _ongoing_board(display_teams, public_competitions),
+        "late_teams": _late_board(display_teams, public_competitions),
         "competitions": public_competitions,
         "late_submissions": public_late_submissions,
         "visualizations": build_visualizations(public_competitions),
