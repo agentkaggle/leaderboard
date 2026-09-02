@@ -356,6 +356,70 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(entry["late_top_percent"], 10.0)
         self.assertFalse(entry["late_beats_winner"])
 
+    def test_a_late_score_below_the_whole_board_stays_inside_the_published_range(self) -> None:
+        source = FakeSource(
+            (
+                competition("ended-comp", deadline=ENDED_DEADLINE, api_team_count=4),
+                snapshot(
+                    team_count=4,
+                    score_order="higher",
+                    score_values=("0.90", "0.80", "0.70", "0.60"),
+                ),
+            )
+        )
+        payload = build(
+            source,
+            late_submissions=(late("ended-comp", "Alpha", "0.10"),),
+            late_submission_account_count=1,
+        )
+
+        entry = payload["competitions"][0]["entries"][0]
+        self.assertIsNone(entry["rank"])
+        self.assertEqual(entry["late_rank"], 4)
+        self.assertEqual(entry["late_top_percent"], 100.0)
+        self.assertFalse(entry["late_beats_winner"])
+        # A rank past the last place would publish Top% > 100 and a negative quantile.
+        validate_public_payload(payload)
+
+    def test_a_non_numeric_winning_score_publishes_no_winner_comparison(self) -> None:
+        source = FakeSource(
+            (
+                competition("ended-comp", deadline=ENDED_DEADLINE),
+                snapshot(
+                    score_order="higher",
+                    score_values=("", "0.90", "0.80"),
+                ),
+            )
+        )
+        payload = build(
+            source,
+            late_submissions=(late("ended-comp", "Alpha", "0.95"),),
+            late_submission_account_count=1,
+        )
+
+        entry = payload["competitions"][0]["entries"][0]
+        self.assertEqual(entry["late_rank"], 1)
+        # The runner-up must never stand in for an unreadable winning score.
+        self.assertFalse(entry["late_beats_winner"])
+
+    def test_entries_are_ordered_by_the_rank_the_table_shows(self) -> None:
+        source = ended_public_source(
+            board_entry("Alpha", 20, "0.80"),
+            board_entry("Beta", 60, "0.50"),
+        )
+        payload = build(
+            source,
+            ("Alpha", "Beta"),
+            authenticated_submission_scores=(
+                authenticated("Alpha", "0.80", "0.10", rank=90, team_count=100),
+                authenticated("Beta", "0.50", "0.90", rank=3, team_count=100),
+            ),
+        )
+
+        entries = payload["competitions"][0]["entries"]
+        self.assertEqual([entry["team_name"] for entry in entries], ["Beta", "Alpha"])
+        self.assertEqual([entry["authenticated_private_rank"] for entry in entries], [3, 90])
+
     def test_only_explicitly_excluded_competitions_are_removed(self) -> None:
         excluded_slugs = (
             "restaurant-revenue-prediction2",

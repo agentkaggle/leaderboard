@@ -25,7 +25,10 @@
         <tbody>
           {{ range .group.competitions }}
             {{ $competition := . }}
-            {{ range (cond $best (first 1 .results) .results) }}
+            {{/* cond evaluates both arms, so first is applied only when it is needed. */}}
+            {{ $rows := .results }}
+            {{ if $best }}{{ $rows = first 1 $rows }}{{ end }}
+            {{ range $rows }}
               <tr>
                 <th scope="row">{{ $competition.title }}</th>
                 <td>{{ .team_name }}</td>
@@ -33,7 +36,7 @@
                 <td>{{ lang.FormatNumberCustom 2 .top_percent }}%</td>
                 <td>{{ .rank }}<span class="muted"> / {{ .leaderboard_team_count }}</span><small>{{ index $rankLabels .rank_kind | default "Rank" }}</small></td>
                 <td><code>{{ .score }}</code><small>{{ index $scoreLabels .score_kind | default "Score" }}</small></td>
-                <td><time class="local-time" datetime="{{ .result_time }}">{{ .result_time }}</time></td>
+                <td>{{ with .result_time }}<time class="local-time" datetime="{{ . }}">{{ . }}</time>{{ else }}<span class="muted">—</span>{{ end }}</td>
                 <td class="muted">{{ .provenance }}</td>
               </tr>
             {{ end }}

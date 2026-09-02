@@ -445,6 +445,6 @@
     "late_submission": "The best completed post-deadline result per team and competition, returned by the authenticated account's My Submissions API. Score direction is inferred from the official leaderboard; the latest result is used when direction is unknown. A starred late rank compares that score with the complete leaderboard score distribution; it is not Kaggle's official Rank.",
     "medal_candidate": "Shown only when Kaggle marks the competition as awarding points. It remains a rank-only estimate: team eligibility, disqualification, verification and active standings can change it.",
     "ongoing_board": "Official participation only. Counts gold, silver and bronze medal-zone results and results inside the top 5 percent, then ranks by total medal-zone count and breaks ties with the top 5 percent count.",
-    "late_board": "Post-deadline submissions only. Counts the competitions where a late score is strictly better than the score of the original winning team, and ranks by that count. No other late statistic is aggregated."
+    "late_board": "Post-deadline submissions only. Counts the competitions where a late score is strictly better than the winning score of the leaderboard that was downloaded, and ranks by that count. Like the starred late rank this is an estimate: the late score prefers the private value while the downloaded leaderboard may be the public one, and the comparison is skipped when the winning score or the score direction is unknown. No other late statistic is aggregated."
   }
 }

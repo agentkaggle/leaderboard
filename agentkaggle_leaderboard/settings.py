@@ -25,13 +25,20 @@ KaggleCredential = str | LegacyKaggleCredential
 
 
 def _parse_json(raw_value: str | None, name: str, kind: str) -> object | None:
-    """Parse an optional JSON secret, never echoing its value in an error."""
+    """Parse an optional JSON secret, never echoing its value in an error.
+
+    Only an absent variable yields None; a literal ``null`` payload is a
+    misconfiguration and must fail loudly rather than read as "not set".
+    """
     if not raw_value or not raw_value.strip():
         return None
     try:
-        return json.loads(raw_value)
+        parsed = json.loads(raw_value)
     except json.JSONDecodeError as exc:
         raise ConfigurationError(f"{name} is not a valid JSON {kind}") from exc
+    if parsed is None:
+        raise ConfigurationError(f"{name} is not a valid JSON {kind}")
+    return parsed
 
 
 def normalize_team_name(value: str) -> str:
@@ -100,13 +107,21 @@ def parse_api_token_array(raw_tokens: str | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(item.strip() for item in parsed if item.strip()))
 
 
-def parse_api_tokens(single_token: str | None, raw_tokens: str | None) -> tuple[str, ...]:
-    """Merge the single-account and multi-account token variables, keeping order."""
+def merge_api_tokens(
+    single_token: str | None,
+    contributor_tokens: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Merge the single-account token with already-parsed contributor tokens, keeping order."""
     candidates: list[str] = []
     if single_token and single_token.strip():
         candidates.append(single_token.strip())
-    candidates.extend(parse_api_token_array(raw_tokens))
+    candidates.extend(contributor_tokens)
     return tuple(dict.fromkeys(candidates))
+
+
+def parse_api_tokens(single_token: str | None, raw_tokens: str | None) -> tuple[str, ...]:
+    """Merge the single-account and multi-account token variables, keeping order."""
+    return merge_api_tokens(single_token, parse_api_token_array(raw_tokens))
 
 
 def parse_legacy_credentials(raw_credentials: str | None) -> tuple[LegacyKaggleCredential, ...]:
@@ -244,10 +259,9 @@ class Settings:
             raise ConfigurationError(
                 "KAGGLE_TEAMS is required unless KAGGLE_AUTO_DISCOVER_TEAMS is true"
             )
-        raw_api_tokens = os.environ.get("KAGGLE_API_TOKENS")
-        contributor_tokens = parse_api_token_array(raw_api_tokens)
-        modern_api_tokens = parse_api_tokens(
-            os.environ.get("KAGGLE_API_TOKEN"), raw_api_tokens
+        contributor_tokens = parse_api_token_array(os.environ.get("KAGGLE_API_TOKENS"))
+        modern_api_tokens = merge_api_tokens(
+            os.environ.get("KAGGLE_API_TOKEN"), contributor_tokens
         )
         legacy_credentials = parse_legacy_credentials(
             os.environ.get("KAGGLE_LEGACY_CREDENTIALS")

@@ -38,7 +38,7 @@
 
   <section aria-labelledby="late-board-title">
     <h2 id="late-board-title">Late 榜 · 赛后提交</h2>
-    <p class="note">只统计赛后提交分数严格优于该比赛原第一名的场次，并据此排序；不计平均、位次或其他汇总。</p>
+    <p class="note">只统计赛后提交分数严格优于该比赛原第一名的场次（估算*，见下方口径），并据此排序；不计平均、位次或其他汇总。</p>
     <div class="table-wrap">
       <table class="board">
         <thead>
@@ -100,7 +100,8 @@
                       {{ if .authenticated_private_rank }}{{ .authenticated_private_rank }}<span class="muted"> / {{ .authenticated_private_rank_team_count }}</span><small>Private Rank</small>
                       {{ else }}{{ .rank }}<span class="muted"> / {{ $teamCount }}</span>{{ if $preferPrivate }}<small>Public Rank</small>{{ end }}{{ end }}
                     </td>
-                    <td>{{ lang.FormatNumberCustom 2 (or .authenticated_private_top_percent .top_percent) }}%</td>
+                    {{/* Test for nil, not falsiness: a legitimate Top% of 0 must not fall through. */}}
+                    <td>{{ if ne .authenticated_private_top_percent nil }}{{ lang.FormatNumberCustom 2 .authenticated_private_top_percent }}%{{ else if ne .top_percent nil }}{{ lang.FormatNumberCustom 2 .top_percent }}%{{ else }}<span class="muted">—</span>{{ end }}</td>
                     <td>
                       {{ if .authenticated_private_score }}<code>{{ .authenticated_private_score }}</code><small>Private Score†</small>{{ with .score }}<small>Public {{ . }}</small>{{ end }}
                       {{ else }}<code>{{ .score }}</code>{{ end }}
@@ -124,13 +125,14 @@
             <table>
               <caption>赛后提交 · 不属于官方榜单</caption>
               <thead>
-                <tr><th scope="col">团队</th><th scope="col">超越原第一名</th><th scope="col">Public Score</th><th scope="col">Private Score</th><th scope="col">推算位次*</th><th scope="col">推算 Top%*</th><th scope="col">提交时间</th></tr>
+                <tr><th scope="col">团队</th><th scope="col">超越原第一名*</th><th scope="col">Public Score</th><th scope="col">Private Score</th><th scope="col">推算位次*</th><th scope="col">推算 Top%*</th><th scope="col">提交时间</th></tr>
               </thead>
               <tbody>
                 {{ range . }}
                   <tr data-team="{{ .team_name }}">
                     <th scope="row">{{ .team_name }}</th>
-                    <td>{{ if .late_beats_winner }}<span class="beat">是</span>{{ else }}<span class="muted">否</span>{{ end }}</td>
+                    {{/* late_rank is set by the same comparison, so a missing rank means "undetermined", not "no". */}}
+                    <td>{{ if not .late_rank }}<span class="muted">—</span>{{ else if .late_beats_winner }}<span class="beat">是</span>{{ else }}<span class="muted">否</span>{{ end }}</td>
                     <td>{{ with .late_public_score }}<code>{{ . }}</code>{{ else }}<span class="muted">—</span>{{ end }}</td>
                     <td>{{ with .late_private_score }}<code>{{ . }}</code>{{ else }}<span class="muted">—</span>{{ end }}</td>
                     <td>{{ if .late_rank }}{{ .late_rank }}<span class="muted"> / {{ .late_rank_team_count }}</span>{{ else }}<span class="muted">—</span>{{ end }}</td>
@@ -153,7 +155,7 @@
       <dt>官方位次</dt><dd>直接读取 Kaggle 完整 leaderboard CSV 的 Rank，Top% = Rank ÷ 该榜单有效队伍数 × 100。</dd>
       <dt>认证 Private 结果†</dt><dd>比赛结束后，仅当授权账户提交的 Public Score 唯一匹配官方 Public Score 时展示对应 Private Score；最终 Private Rank 读自该账户的 entered competition 元数据，不从 Public 榜推断。</dd>
       <dt>奖牌候选</dt><dd>仅在 Kaggle 标记该比赛计入积分时，按 progression 位次区间估算；团队资格、DQ、最终验证与进行中榜单变化都可能改变结果。</dd>
-      <dt>赛后提交*</dt><dd>截止后完成的提交，不是官方成绩。推算位次是把赛后分数与完整榜单分数分布比较得到的估计；“超越原第一名”表示该分数严格优于原榜单第一名的分数。</dd>
+      <dt>赛后提交*</dt><dd>截止后完成的提交，不是官方成绩。推算位次是把赛后分数与完整榜单分数分布比较得到的估计；“超越原第一名*”同样是估计，表示该赛后分数严格优于所下载榜单第一名的分数。赛后分数优先取 Private，而下载到的榜单可能是 Public，两者由不同数据切分计算，因此该比较不等同于官方结论；无法比较时显示 —。</dd>
     </dl>
   </section>
 {{ end }}

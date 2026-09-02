@@ -18,7 +18,8 @@
     <section id="{{ $state }}" aria-labelledby="{{ $state }}-title">
       <h2 id="{{ $state }}-title">{{ $label }}</h2>
       <p class="note">{{ $group.competition_count }} 场比赛 · {{ $group.result_count }} 条账号成绩</p>
-      {{ if eq $group.competition_count 0 }}
+      {{/* Test the slice, not the count: Hugo's eq never matches a JSON number against an int literal. */}}
+      {{ if not $group.competitions }}
         <p class="empty">当前没有可计算分位的{{ $label }}。</p>
       {{ else }}
         {{/* Both charts of a state read the same rows from one non-executable data block. */}}

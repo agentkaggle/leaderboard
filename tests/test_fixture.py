@@ -71,8 +71,10 @@ class FixtureConsistencyTests(unittest.TestCase):
                     self.assertEqual(entry["score"], "")
                     self.assertEqual(entry["medal_candidate"], "unavailable")
                     continue
-                rank = entry["authenticated_private_rank"] or entry["rank"]
-                count = entry["authenticated_private_rank_team_count"] or team_count
+                rank = entry["authenticated_private_rank"]
+                count = entry["authenticated_private_rank_team_count"]
+                if rank is None:
+                    rank, count = entry["rank"], team_count
                 self.assertEqual(
                     entry["medal_candidate"],
                     medal_candidate(rank, count) if competition["awards_points"] else "not_eligible",

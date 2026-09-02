@@ -103,9 +103,8 @@
     return node;
   };
 
-  const chartData = new Map();
-
-  const readRecords = (mount) => {
+  /** Parse each data block once per render; the cache dies with the render. */
+  const readRecords = (mount, chartData) => {
     const sourceId = mount.dataset.chartSource;
     if (!chartData.has(sourceId)) {
       const source = document.getElementById(sourceId);
@@ -552,25 +551,30 @@
 
   /** Highlight every mark of one account, touching only the two teams involved. */
   const bindLegendControls = () => {
+    // Each node kind answers to its own class, so they are registered separately.
     const byTeam = new Map();
-    const register = (team, node) => {
+    const register = (team, node, className) => {
+      if (!team) return;
       if (!byTeam.has(team)) byTeam.set(team, []);
-      byTeam.get(team).push(node);
+      byTeam.get(team).push([node, className]);
     };
     document
-      .querySelectorAll(".chart-team-highlight-ring[data-team], .chart-legend-control")
-      .forEach((node) => register(node.dataset.team || "", node));
+      .querySelectorAll(".chart-team-highlight-ring[data-team]")
+      .forEach((ring) => register(ring.dataset.team, ring, "chart-team-highlighted"));
+    document
+      .querySelectorAll(".chart-legend-control")
+      .forEach((control) => register(control.dataset.team, control, "chart-legend-selected"));
 
     const paint = (team, selected) => {
-      (byTeam.get(team) || []).forEach((node) => {
-        node.classList.toggle("chart-team-highlighted", selected);
-        node.classList.toggle("chart-legend-selected", selected);
+      (byTeam.get(team) || []).forEach(([node, className]) => {
+        node.classList.toggle(className, selected);
         if (node.hasAttribute("aria-pressed")) {
           node.setAttribute("aria-pressed", String(selected));
         }
       });
     };
     const toggle = (team) => {
+      if (!team) return;
       paint(highlightedTeam, false);
       highlightedTeam = highlightedTeam === team ? "" : team;
       paint(highlightedTeam, true);
@@ -587,9 +591,10 @@
   };
 
   const renderCharts = () => {
+    const chartData = new Map();
     const charts = [...document.querySelectorAll(".chart-mount")].map((mount) => [
       mount,
-      readRecords(mount),
+      readRecords(mount, chartData),
     ]);
     const allTeams = [
       ...new Set(charts.flatMap(([, records]) => records.map((record) => record.team))),

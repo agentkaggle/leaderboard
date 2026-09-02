@@ -10,9 +10,14 @@
     timeZoneName: "short",
   });
 
+  // Kaggle's leaderboard CSV timestamps arrive without a zone; read them as UTC so
+  // a value renders the same here as in the chart tooltips (visualizations.js).
+  const asUtc = (value) =>
+    /(?:Z|[+-]\d{2}:?\d{2})$/u.test(value) ? value : `${String(value).replace(" ", "T")}Z`;
+
   const localize = (selector, formatter) => {
     document.querySelectorAll(selector).forEach((element) => {
-      const date = new Date(element.dateTime);
+      const date = new Date(asUtc(element.dateTime));
       element.textContent = Number.isNaN(date.valueOf())
         ? element.dateTime
         : formatter.format(date);

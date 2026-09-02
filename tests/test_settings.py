@@ -69,6 +69,17 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigurationError, "array of strings"):
             parse_api_tokens(None, '{"token": "secret"}')
 
+    def test_a_json_null_secret_is_rejected_rather_than_read_as_unset(self) -> None:
+        for parse, name in (
+            (lambda value: parse_api_tokens(None, value), "KAGGLE_API_TOKENS"),
+            (parse_legacy_credentials, "KAGGLE_LEGACY_CREDENTIALS"),
+            (parse_team_aliases, "KAGGLE_TEAM_ALIASES"),
+        ):
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ConfigurationError, name):
+                    parse(" null ")
+                self.assertEqual(parse(None), ())
+
     def test_legacy_credentials_require_username_key_objects(self) -> None:
         credentials = parse_legacy_credentials(
             '[{"username":"apostle715","key":"legacy-key"}]'

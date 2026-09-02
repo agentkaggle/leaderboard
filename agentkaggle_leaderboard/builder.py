@@ -129,24 +129,24 @@ def _public_competition(
             best_by_team[key] = match
 
     entries: list[dict[str, object]] = []
-    for match in sorted(
-        best_by_team.values(),
-        key=lambda item: (item.rank, item.configured_team_name),
-    ):
-        assert snapshot is not None  # Matches only exist alongside a snapshot.
-        entry = _new_entry(match.configured_team_name)
-        entry.update(
-            rank=match.rank,
-            top_percent=round((match.rank / snapshot.team_count) * 100, 4),
-            score=match.score,
-            submission_date=match.submission_date,
-            medal_candidate=(
-                medal_candidate(match.rank, snapshot.team_count)
-                if competition.awards_points
-                else "not_eligible"
-            ),
-        )
-        entries.append(entry)
+    if snapshot is not None:  # Matches only exist alongside a leaderboard snapshot.
+        for match in sorted(
+            best_by_team.values(),
+            key=lambda item: (item.rank, item.configured_team_name),
+        ):
+            entry = _new_entry(match.configured_team_name)
+            entry.update(
+                rank=match.rank,
+                top_percent=round((match.rank / snapshot.team_count) * 100, 4),
+                score=match.score,
+                submission_date=match.submission_date,
+                medal_candidate=(
+                    medal_candidate(match.rank, snapshot.team_count)
+                    if competition.awards_points
+                    else "not_eligible"
+                ),
+            )
+            entries.append(entry)
 
     return {
         "slug": competition.slug,
@@ -295,14 +295,17 @@ def _merge_late_results_into_competitions(
     competitions_by_slug = {
         str(competition["slug"]): competition for competition in competitions
     }
-    # score_values keeps the leaderboard's rank order, so index 0 is the winner.
+    # Only the competitions that actually received a late submission are compared.
+    scored_slugs = {
+        str(late_submission["competition_slug"]) for late_submission in late_submissions
+    }
+    # score_values keeps the leaderboard's rank order, so index 0 is the winner's
+    # score. Non-numeric values stay in place as None so a blank winning score
+    # suppresses the winner comparison instead of promoting the runner-up.
     board_scores_by_slug = {
-        slug: [
-            score
-            for value in snapshot.score_values
-            if (score := _numeric_value(value)) is not None
-        ]
-        for slug, snapshot in snapshots.items()
+        slug: tuple(_numeric_value(value) for value in snapshots[slug].score_values)
+        for slug in scored_slugs
+        if slug in snapshots
     }
 
     for late_submission in late_submissions:
@@ -357,40 +360,54 @@ def _merge_late_results_into_competitions(
             None,
         )
         board_scores = board_scores_by_slug.get(slug, ())
+        ranked_scores = [score for score in board_scores if score is not None]
         if (
             snapshot is None
             or late_score is None
-            or not board_scores
+            or not ranked_scores
             or snapshot.team_count <= 0
             or snapshot.score_order not in {"higher", "lower"}
         ):
             continue
 
         order = snapshot.score_order
-        entry["late_beats_winner"] = _is_better(late_score, board_scores[0], order)
+        winner_score = board_scores[0]
+        entry["late_beats_winner"] = winner_score is not None and _is_better(
+            late_score, winner_score, order
+        )
 
         # The late score replaces the team's own official score in the distribution.
         official_score = _numeric_value(entry["score"])
-        better_count = sum(_is_better(score, late_score, order) for score in board_scores)
+        better_count = sum(_is_better(score, late_score, order) for score in ranked_scores)
         if (
             official_score is not None
-            and official_score in board_scores
+            and official_score in ranked_scores
             and _is_better(official_score, late_score, order)
         ):
             better_count -= 1
-        late_rank = better_count + 1
+        # A late estimate can never place below the last team on the board it is
+        # measured against, so Top% stays inside the published 0-100 range.
+        late_rank = min(better_count + 1, snapshot.team_count)
         entry["late_rank"] = late_rank
         entry["late_top_percent"] = round((late_rank / snapshot.team_count) * 100, 4)
         entry["late_rank_team_count"] = snapshot.team_count
 
-    for competition in competitions:
-        _entries(competition).sort(
-            key=lambda entry: (
-                entry["rank"] is None,
-                int(entry["rank"]) if entry["rank"] is not None else 0,
-                str(entry["team_name"]).casefold(),
-            )
+
+def _sort_entries(competitions: list[dict[str, object]]) -> None:
+    """Order rows by the rank each row actually displays, so the table reads in order."""
+
+    def key(entry: dict[str, object]) -> tuple[bool, int, str]:
+        rank = entry["authenticated_private_rank"]
+        if rank is None:
+            rank = entry["rank"]
+        return (
+            rank is None,
+            int(rank) if rank is not None else 0,
+            str(entry["team_name"]).casefold(),
         )
+
+    for competition in competitions:
+        _entries(competition).sort(key=key)
 
 
 def _ranked(
@@ -424,7 +441,9 @@ def _ongoing_board(
             if entry["medal_candidate"] in MEDALS:
                 medals[team][entry["medal_candidate"]] += 1
             # An authenticated final Private rank replaces the Public one when known.
-            top_percent = entry["authenticated_private_top_percent"] or entry["top_percent"]
+            top_percent = entry["authenticated_private_top_percent"]
+            if top_percent is None:
+                top_percent = entry["top_percent"]
             if top_percent is not None and float(top_percent) <= TOP_PERCENT_THRESHOLD:
                 top_percent_counts[team] += 1
 
@@ -552,6 +571,7 @@ def build_leaderboard(
     authenticated_private_score_count = _merge_authenticated_private_scores(
         public_competitions, authenticated_submission_scores
     )
+    _sort_entries(public_competitions)
     public_competitions.sort(
         key=lambda item: (
             item["state"] != "active",
@@ -628,8 +648,11 @@ def build_leaderboard(
             ),
             "late_board": (
                 "Post-deadline submissions only. Counts the competitions where a late score is "
-                "strictly better than the score of the original winning team, and ranks by that "
-                "count. No other late statistic is aggregated."
+                "strictly better than the winning score of the leaderboard that was downloaded, "
+                "and ranks by that count. Like the starred late rank this is an estimate: the "
+                "late score prefers the private value while the downloaded leaderboard may be "
+                "the public one, and the comparison is skipped when the winning score or the "
+                "score direction is unknown. No other late statistic is aggregated."
             ),
         },
     }
