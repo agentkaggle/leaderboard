@@ -148,8 +148,12 @@ def default_source() -> FakeSource:
 
 
 def build(source: FakeSource, teams: tuple[str, ...] = ("Alpha",), **kwargs):
+    """Register every configured team as its own user unless a test overrides it."""
     kwargs.setdefault("generated_at", NOW)
-    return build_leaderboard(source, Settings(teams, workers=2), **kwargs)
+    student_names = kwargs.pop("student_names", tuple((team, team) for team in teams))
+    return build_leaderboard(
+        source, Settings(teams, workers=2, student_names=student_names), **kwargs
+    )
 
 
 def ended_public_source(*matches: LeaderboardEntry, **snapshot_kwargs) -> FakeSource:
@@ -583,6 +587,71 @@ class BuilderTests(unittest.TestCase):
             )
         )
         validate_public_payload(payload)
+
+
+class StudentRosterTests(unittest.TestCase):
+    """Kaggle team names roll up to one user, and only users reach the boards."""
+
+    def two_team_source(self) -> FakeSource:
+        return FakeSource(
+            (
+                competition("active-comp", awards_points=True),
+                snapshot(
+                    board_entry("Handle One", 4, "0.95"),
+                    board_entry("Handle Two", 40, "0.60"),
+                ),
+            )
+        )
+
+    def test_every_kaggle_team_of_one_user_becomes_one_row(self) -> None:
+        payload = build(
+            self.two_team_source(),
+            ("Handle One", "Handle Two"),
+            student_names=(("Handle One", "Ada"), ("Handle Two", "Ada")),
+        )
+
+        entries = payload["competitions"][0]["entries"]
+        self.assertEqual([entry["team_name"] for entry in entries], ["Ada"])
+        # The better of the two handles wins the single published row.
+        self.assertEqual(entries[0]["rank"], 4)
+        self.assertEqual([team["name"] for team in payload["ongoing_teams"]], ["Ada"])
+        self.assertEqual(payload["ongoing_teams"][0]["medal_count"], 1)
+
+    def test_an_unregistered_team_keeps_its_rows_but_leaves_the_boards(self) -> None:
+        payload = build(
+            self.two_team_source(),
+            ("Handle One", "Handle Two"),
+            student_names=(("Handle One", "Ada"),),
+            late_submissions=(late("active-comp", "Handle Two", "0.99"),),
+            late_submission_account_count=1,
+        )
+
+        entries = payload["competitions"][0]["entries"]
+        self.assertEqual([entry["team_name"] for entry in entries], ["Ada", "Handle Two"])
+        self.assertEqual(
+            [submission["team_name"] for submission in payload["late_submissions"]],
+            ["Handle Two"],
+        )
+        for board in ("ongoing_teams", "late_teams"):
+            self.assertEqual([team["name"] for team in payload[board]], ["Ada"])
+        # The unregistered team is still tracked, just never ranked.
+        self.assertEqual(payload["summary"]["tracked_team_count"], 2)
+
+    def test_the_builder_roster_is_used_when_settings_leaves_it_unset(self) -> None:
+        payload = build_leaderboard(
+            FakeSource(
+                (
+                    competition("active-comp"),
+                    snapshot(board_entry("FlameZywoo", 3, "0.95")),
+                )
+            ),
+            Settings(("FlameZywoo", "Unregistered Team"), workers=2),
+            generated_at=NOW,
+        )
+
+        entry = payload["competitions"][0]["entries"][0]
+        self.assertEqual(entry["team_name"], "MenghanLi")
+        self.assertEqual([team["name"] for team in payload["ongoing_teams"]], ["MenghanLi"])
 
 
 class OngoingBoardTests(unittest.TestCase):

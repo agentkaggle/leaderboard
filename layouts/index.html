@@ -1,13 +1,13 @@
 {{ define "main" }}
   {{ $data := hugo.Data.leaderboard }}
   <h1>Kaggle Team Radar</h1>
-  <p class="lede">从授权账户识别 team，扫描 Kaggle 可访问比赛。Ongoing 榜只统计正式参赛的奖牌候选区与 Top 5% 场次，Late 榜只统计赛后提交超越原赛事第一名的场次；两个榜单互不合并。</p>
+  <p class="lede">从授权账户识别 Kaggle 队名并归到对应用户，扫描 Kaggle 可访问比赛。两个榜单只排名单内的用户：Ongoing 榜只统计正式参赛的奖牌候选区与 Top 5% 场次，Late 榜只统计赛后提交超越原赛事第一名的场次；两个榜单互不合并。</p>
 
   {{ partial "notice.html" $data }}
 
   {{ partial "stats.html" (slice
     (dict "label" "有结果比赛" "value" $data.summary.matched_competition_count)
-    (dict "label" "比赛团队记录" "value" $data.summary.participation_count)
+    (dict "label" "参赛记录" "value" $data.summary.participation_count)
     (dict "label" "扫描覆盖" "value" (printf "%v / %v" $data.summary.scanned_competition_count $data.summary.discovered_competition_count))
     (dict "label" "赛后最佳结果" "value" $data.summary.late_submission_count)) }}
 
@@ -17,7 +17,7 @@
     <div class="table-wrap">
       <table class="board">
         <thead>
-          <tr><th scope="col">#</th><th scope="col">团队</th><th scope="col">金</th><th scope="col">银</th><th scope="col">铜</th><th scope="col">奖牌合计</th><th scope="col">Top 5%</th></tr>
+          <tr><th scope="col">#</th><th scope="col">用户</th><th scope="col">金</th><th scope="col">银</th><th scope="col">铜</th><th scope="col">奖牌合计</th><th scope="col">Top 5%</th></tr>
         </thead>
         <tbody>
           {{ range $data.ongoing_teams }}
@@ -42,7 +42,7 @@
     <div class="table-wrap">
       <table class="board">
         <thead>
-          <tr><th scope="col">#</th><th scope="col">团队</th><th scope="col">超越原第一名</th></tr>
+          <tr><th scope="col">#</th><th scope="col">用户</th><th scope="col">超越原第一名</th></tr>
         </thead>
         <tbody>
           {{ range $data.late_teams }}
@@ -63,8 +63,8 @@
     {{ $teams := slice }}
     {{ range $data.competitions }}{{ range .entries }}{{ $teams = $teams | append .team_name }}{{ end }}{{ end }}
     <div class="filters">
-      <label><span class="sr-only">搜索比赛或团队</span><input id="search" type="search" placeholder="搜索比赛或团队…" autocomplete="off"></label>
-      <label><span>团队</span><select id="team-filter"><option value="">全部</option>{{ range $teams | uniq | sort }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select></label>
+      <label><span class="sr-only">搜索比赛或用户</span><input id="search" type="search" placeholder="搜索比赛或用户…" autocomplete="off"></label>
+      <label><span>用户</span><select id="team-filter"><option value="">全部</option>{{ range $teams | uniq | sort }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select></label>
       <label><span>类别</span><select id="category-filter"><option value="">全部</option></select></label>
       <label><span>状态</span><select id="state-filter"><option value="">全部</option><option value="active">进行中</option><option value="ended">已结束</option></select></label>
       <p id="result-count" aria-live="polite">共 {{ $data.summary.matched_competition_count }} 场</p>
@@ -90,7 +90,7 @@
             <table>
               <caption>正式成绩 · {{ if $private }}官方 Private LB{{ else if $preferPrivate }}官方 Public LB，认证 Private 结果优先†{{ else }}官方 Public LB{{ end }}</caption>
               <thead>
-                <tr><th scope="col">团队</th><th scope="col">位次</th><th scope="col">Top%</th><th scope="col">分数</th><th scope="col">奖牌候选</th><th scope="col">提交时间</th></tr>
+                <tr><th scope="col">用户</th><th scope="col">位次</th><th scope="col">Top%</th><th scope="col">分数</th><th scope="col">奖牌候选</th><th scope="col">提交时间</th></tr>
               </thead>
               <tbody>
                 {{ range . }}
@@ -125,7 +125,7 @@
             <table>
               <caption>赛后提交 · 不属于官方榜单</caption>
               <thead>
-                <tr><th scope="col">团队</th><th scope="col">超越原第一名*</th><th scope="col">Public Score</th><th scope="col">Private Score</th><th scope="col">推算位次*</th><th scope="col">推算 Top%*</th><th scope="col">提交时间</th></tr>
+                <tr><th scope="col">用户</th><th scope="col">超越原第一名*</th><th scope="col">Public Score</th><th scope="col">Private Score</th><th scope="col">推算位次*</th><th scope="col">推算 Top%*</th><th scope="col">提交时间</th></tr>
               </thead>
               <tbody>
                 {{ range . }}
@@ -152,6 +152,7 @@
   <section class="methodology" aria-labelledby="method-title">
     <h2 id="method-title">口径与边界</h2>
     <dl>
+      <dt>用户与队名</dt><dd>名单把同一位用户在 Kaggle 上用过的多个队名归到一个人，因此每人每场比赛只出现一行。两个总榜只排名单内的用户；未登记到用户的 Kaggle 队名仍按原名出现在比赛明细与成绩分布图里，但不会进入总榜。</dd>
       <dt>官方位次</dt><dd>直接读取 Kaggle 完整 leaderboard CSV 的 Rank，Top% = Rank ÷ 该榜单有效队伍数 × 100。</dd>
       <dt>认证 Private 结果†</dt><dd>比赛结束后，仅当授权账户提交的 Public Score 唯一匹配官方 Public Score 时展示对应 Private Score；最终 Private Rank 读自该账户的 entered competition 元数据，不从 Public 榜推断。</dd>
       <dt>奖牌候选</dt><dd>仅在 Kaggle 标记该比赛计入积分时，按 progression 位次区间估算；团队资格、DQ、最终验证与进行中榜单变化都可能改变结果。</dd>

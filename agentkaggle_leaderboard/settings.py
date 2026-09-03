@@ -222,6 +222,9 @@ class Settings:
     )
     auto_discover_teams: bool = False
     team_aliases: tuple[tuple[str, str], ...] = ()
+    # Kaggle team name to the display name of the person behind it. None keeps
+    # the builder's own roster; pass an explicit mapping to override it.
+    student_names: tuple[tuple[str, str], ...] | None = None
 
     @property
     def normalized_teams(self) -> dict[str, str]:

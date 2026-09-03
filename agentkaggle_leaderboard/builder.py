@@ -37,8 +37,9 @@ EXCLUDED_COMPETITION_SLUGS = frozenset(
         "restaurant-revenue-prediction2",
     }
 )
-# Maps a Kaggle team/account name to the student's display name, so every
-# team a student competes under is shown and ranked as one person.
+# Default roster: maps a Kaggle team/account name to the student's display name,
+# so every team a student competes under is shown and ranked as one person. Only
+# a team listed here reaches the two boards; Settings.student_names overrides it.
 STUDENT_NAMES_BY_TEAM = {
     "FlameZywoo": "MenghanLi",
     "zgdllt": "MenghanLi",
@@ -57,13 +58,32 @@ STUDENT_NAMES_BY_TEAM = {
     "Justin Kimlim": "JustinZhengkaiLin",
     "muheng": "Muheng",
 }
-_STUDENT_NAME_BY_NORMALIZED_TEAM = {
-    normalize_team_name(team): student for team, student in STUDENT_NAMES_BY_TEAM.items()
-}
 
 
-def _display_team_name(team_name: str) -> str:
-    return _STUDENT_NAME_BY_NORMALIZED_TEAM.get(normalize_team_name(team_name), team_name)
+def _student_names(settings: Settings) -> dict[str, str]:
+    """Resolve this build's roster: normalized Kaggle team name to student name."""
+    roster = (
+        STUDENT_NAMES_BY_TEAM.items()
+        if settings.student_names is None
+        else settings.student_names
+    )
+    return {normalize_team_name(team): student for team, student in roster}
+
+
+def _display_team_name(students: dict[str, str], team_name: str) -> str:
+    """The student behind a Kaggle team, or the raw team name when unregistered."""
+    return students.get(normalize_team_name(team_name), team_name)
+
+
+def _board_roster(students: dict[str, str], teams: tuple[str, ...]) -> tuple[str, ...]:
+    """The registered students among the tracked teams, in configured order."""
+    return tuple(
+        dict.fromkeys(
+            student
+            for team in teams
+            if (student := students.get(normalize_team_name(team))) is not None
+        )
+    )
 
 
 def _iso_utc(value: datetime | None) -> str:
@@ -147,10 +167,13 @@ def _public_competition(
     competition: Competition,
     snapshot: LeaderboardSnapshot | None,
     generated_at: datetime,
+    students: dict[str, str],
 ) -> dict[str, object]:
     best_by_team: dict[str, LeaderboardEntry] = {}
     for match in snapshot.matches if snapshot is not None else ():
-        key = normalize_team_name(_display_team_name(match.configured_team_name))
+        key = normalize_team_name(
+            _display_team_name(students, match.configured_team_name)
+        )
         existing = best_by_team.get(key)
         if existing is None or match.rank < existing.rank:
             best_by_team[key] = match
@@ -161,7 +184,7 @@ def _public_competition(
             best_by_team.values(),
             key=lambda item: (item.rank, item.configured_team_name),
         ):
-            entry = _new_entry(_display_team_name(match.configured_team_name))
+            entry = _new_entry(_display_team_name(students, match.configured_team_name))
             entry.update(
                 rank=match.rank,
                 top_percent=round((match.rank / snapshot.team_count) * 100, 4),
@@ -194,6 +217,7 @@ def _public_competition(
 def _public_late_submissions(
     late_submissions: tuple[LateSubmissionEntry, ...],
     score_orders: dict[str, str],
+    students: dict[str, str],
 ) -> list[dict[str, object]]:
     def numeric_score(entry: LateSubmissionEntry) -> Decimal | None:
         for value in (entry.private_score, entry.public_score):
@@ -216,7 +240,7 @@ def _public_late_submissions(
     for entry in late_submissions:
         key = (
             entry.competition_slug,
-            normalize_team_name(_display_team_name(entry.configured_team_name)),
+            normalize_team_name(_display_team_name(students, entry.configured_team_name)),
         )
         existing = unique.get(key)
         if existing is None or is_better(entry, existing):
@@ -228,7 +252,7 @@ def _public_late_submissions(
             "competition_title": entry.competition_title,
             "competition_url": entry.competition_url,
             "deadline": _iso_utc(entry.deadline),
-            "team_name": _display_team_name(entry.configured_team_name),
+            "team_name": _display_team_name(students, entry.configured_team_name),
             "public_score": entry.public_score,
             "private_score": entry.private_score,
             "submission_date": _iso_utc(entry.submission_date),
@@ -238,7 +262,7 @@ def _public_late_submissions(
             key=lambda entry: (
                 -entry.submission_date.timestamp(),
                 entry.competition_title.casefold(),
-                _display_team_name(entry.configured_team_name).casefold(),
+                _display_team_name(students, entry.configured_team_name).casefold(),
             ),
         )
     ]
@@ -262,12 +286,13 @@ def _entries(competition: dict[str, object]) -> list[dict[str, object]]:
 def _merge_authenticated_private_scores(
     competitions: list[dict[str, object]],
     authenticated_scores: tuple[AuthenticatedSubmissionScoreEntry, ...],
+    students: dict[str, str],
 ) -> int:
     scores_by_team: dict[tuple[str, str], list[AuthenticatedSubmissionScoreEntry]] = {}
     for score in authenticated_scores:
         key = (
             score.competition_slug,
-            normalize_team_name(_display_team_name(score.configured_team_name)),
+            normalize_team_name(_display_team_name(students, score.configured_team_name)),
         )
         scores_by_team.setdefault(key, []).append(score)
 
@@ -459,38 +484,42 @@ def _ranked(
 
 
 def _ongoing_board(
-    teams: tuple[str, ...],
+    roster: tuple[str, ...],
     competitions: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    """Rank official participation by medal-zone count, then by Top 5% count."""
-    medals = {team: Counter() for team in teams}
-    top_percent_counts = {team: 0 for team in teams}
+    """Rank official participation by medal-zone count, then by Top 5% count.
+
+    Only the roster is ranked, so a Kaggle team with no registered student keeps
+    its competition rows but never appears as a board row.
+    """
+    medals = {student: Counter() for student in roster}
+    top_percent_counts = {student: 0 for student in roster}
 
     for competition in competitions:
         for entry in _entries(competition):
-            team = str(entry["team_name"])
-            if team not in medals:
+            student = str(entry["team_name"])
+            if student not in medals:
                 continue
             if entry["medal_candidate"] in MEDALS:
-                medals[team][entry["medal_candidate"]] += 1
+                medals[student][entry["medal_candidate"]] += 1
             # An authenticated final Private rank replaces the Public one when known.
             top_percent = entry["authenticated_private_top_percent"]
             if top_percent is None:
                 top_percent = entry["top_percent"]
             if top_percent is not None and float(top_percent) <= TOP_PERCENT_THRESHOLD:
-                top_percent_counts[team] += 1
+                top_percent_counts[student] += 1
 
     summaries = [
         {
             "position": None,
-            "name": team,
-            "gold_count": medals[team]["gold"],
-            "silver_count": medals[team]["silver"],
-            "bronze_count": medals[team]["bronze"],
-            "medal_count": sum(medals[team].values()),
-            "top_percent_count": top_percent_counts[team],
+            "name": student,
+            "gold_count": medals[student]["gold"],
+            "silver_count": medals[student]["silver"],
+            "bronze_count": medals[student]["bronze"],
+            "medal_count": sum(medals[student].values()),
+            "top_percent_count": top_percent_counts[student],
         }
-        for team in teams
+        for student in roster
     ]
     return _ranked(
         summaries,
@@ -506,24 +535,27 @@ def _ongoing_board(
 
 
 def _late_board(
-    teams: tuple[str, ...],
+    roster: tuple[str, ...],
     competitions: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    """Rank post-deadline work by how often it beat the original winning score."""
-    beat_winner_counts = {team: 0 for team in teams}
+    """Rank post-deadline work by how often it beat the original winning score.
+
+    Like the ongoing board, only the roster is ranked.
+    """
+    beat_winner_counts = {student: 0 for student in roster}
     for competition in competitions:
         for entry in _entries(competition):
-            team = str(entry["team_name"])
-            if entry["late_beats_winner"] and team in beat_winner_counts:
-                beat_winner_counts[team] += 1
+            student = str(entry["team_name"])
+            if entry["late_beats_winner"] and student in beat_winner_counts:
+                beat_winner_counts[student] += 1
 
     summaries = [
         {
             "position": None,
-            "name": team,
-            "beat_winner_count": beat_winner_counts[team],
+            "name": student,
+            "beat_winner_count": beat_winner_counts[student],
         }
-        for team in teams
+        for student in roster
     ]
     return _ranked(
         summaries,
@@ -550,6 +582,7 @@ def build_leaderboard(
     generated_at = generated_at or datetime.now(timezone.utc)
     if generated_at.tzinfo is None:
         generated_at = generated_at.replace(tzinfo=timezone.utc)
+    students = _student_names(settings)
 
     competitions = source.list_competitions(max_competitions=max_competitions)
     if not competitions:
@@ -583,6 +616,7 @@ def build_leaderboard(
         for entry in _public_late_submissions(
             late_submissions,
             {slug: snapshot.score_order for slug, snapshot in snapshots.items()},
+            students,
         )
         if str(entry["competition_slug"]) not in EXCLUDED_COMPETITION_SLUGS
     ]
@@ -590,7 +624,9 @@ def build_leaderboard(
         str(entry["competition_slug"]) for entry in public_late_submissions
     }
     public_competitions = [
-        _public_competition(competition, snapshots.get(competition.slug), generated_at)
+        _public_competition(
+            competition, snapshots.get(competition.slug), generated_at, students
+        )
         for competition in competitions
         if competition.slug not in EXCLUDED_COMPETITION_SLUGS
         and (
@@ -602,7 +638,7 @@ def build_leaderboard(
         public_competitions, public_late_submissions, snapshots
     )
     authenticated_private_score_count = _merge_authenticated_private_scores(
-        public_competitions, authenticated_submission_scores
+        public_competitions, authenticated_submission_scores, students
     )
     _sort_entries(public_competitions)
     public_competitions.sort(
@@ -614,7 +650,10 @@ def build_leaderboard(
     )
 
     truncated = max_competitions is not None and len(competitions) >= max_competitions
-    display_teams = tuple(dict.fromkeys(_display_team_name(team) for team in settings.teams))
+    display_teams = tuple(
+        dict.fromkeys(_display_team_name(students, team) for team in settings.teams)
+    )
+    board_roster = _board_roster(students, settings.teams)
     return {
         "schema_version": 10,
         "generated_at": _iso_utc(generated_at),
@@ -639,8 +678,8 @@ def build_leaderboard(
             "truncated": truncated,
             "error_counts": dict(sorted(Counter(failure.kind for failure in failures).items())),
         },
-        "ongoing_teams": _ongoing_board(display_teams, public_competitions),
-        "late_teams": _late_board(display_teams, public_competitions),
+        "ongoing_teams": _ongoing_board(board_roster, public_competitions),
+        "late_teams": _late_board(board_roster, public_competitions),
         "competitions": public_competitions,
         "late_submissions": public_late_submissions,
         "visualizations": build_visualizations(public_competitions),
@@ -676,9 +715,11 @@ def build_leaderboard(
                 "standings can change it."
             ),
             "ongoing_board": (
-                "Official participation only. Counts gold, silver and bronze medal-zone results "
-                "and results inside the top 5 percent, then ranks by total medal-zone count and "
-                "breaks ties with the top 5 percent count."
+                "Official participation only, and only for the registered users the roster "
+                "maps Kaggle team names onto. Counts gold, silver and bronze medal-zone "
+                "results and results inside the top 5 percent, then ranks by total "
+                "medal-zone count and breaks ties with the top 5 percent count. A Kaggle "
+                "team with no registered user keeps its competition rows but is never ranked."
             ),
             "late_board": (
                 "Post-deadline submissions only. Counts the competitions where a late score is "
@@ -686,7 +727,8 @@ def build_leaderboard(
                 "and ranks by that count. Like the starred late rank this is an estimate: the "
                 "late score prefers the private value while the downloaded leaderboard may be "
                 "the public one, and the comparison is skipped when the winning score or the "
-                "score direction is unknown. No other late statistic is aggregated."
+                "score direction is unknown. Only registered users are ranked. No other late "
+                "statistic is aggregated."
             ),
         },
     }
