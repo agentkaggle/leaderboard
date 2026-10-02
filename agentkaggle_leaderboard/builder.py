@@ -57,6 +57,7 @@ STUDENT_NAMES_BY_TEAM = {
     "kimlim": "JustinZhengkaiLin",
     "Justin Kimlim": "JustinZhengkaiLin",
     "muheng": "Muheng",
+    "RFeng12": "RichardFeng",
 }
 
 
