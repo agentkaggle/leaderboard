@@ -119,6 +119,20 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.team_discovery_api_tokens, ("token-a", "token-b"))
         self.assertNotIn("token-a", repr(settings))
 
+    def test_extra_teams_merge_into_the_configured_teams(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "KAGGLE_TEAMS": '["Alpha", "Beta"]',
+                "KAGGLE_EXTRA_TEAMS": '["beta", "Gamma"]',
+                "KAGGLE_API_TOKEN": "primary-token",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_environment(load_local_dotenv=False)
+
+        self.assertEqual(settings.teams, ("Alpha", "Beta", "Gamma"))
+
     def test_auto_discovery_allows_an_empty_manual_team_list(self) -> None:
         with patch.dict(
             "os.environ",

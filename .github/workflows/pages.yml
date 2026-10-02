@@ -50,6 +50,7 @@ jobs:
       - name: Generate sanitized leaderboard data
         env:
           KAGGLE_TEAMS: ${{ secrets.KAGGLE_TEAMS }}
+          KAGGLE_EXTRA_TEAMS: ${{ secrets.KAGGLE_EXTRA_TEAMS }}
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           KAGGLE_API_TOKENS: ${{ secrets.KAGGLE_API_TOKENS }}
           KAGGLE_LEGACY_CREDENTIALS: ${{ secrets.KAGGLE_LEGACY_CREDENTIALS }}

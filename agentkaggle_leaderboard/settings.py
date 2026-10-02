@@ -45,29 +45,31 @@ def normalize_team_name(value: str) -> str:
     return unicodedata.normalize("NFKC", value).strip().casefold()
 
 
-def parse_team_names(raw_value: str | None) -> tuple[str, ...]:
+def parse_team_names(
+    raw_value: str | None, name: str = "KAGGLE_TEAMS"
+) -> tuple[str, ...]:
     if not raw_value or not raw_value.strip():
-        raise ConfigurationError("KAGGLE_TEAMS must contain at least one team name")
+        raise ConfigurationError(f"{name} must contain at least one team name")
 
     raw_value = raw_value.strip()
     if raw_value.startswith("["):
-        parsed = _parse_json(raw_value, "KAGGLE_TEAMS", "array")
+        parsed = _parse_json(raw_value, name, "array")
         if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
-            raise ConfigurationError("KAGGLE_TEAMS JSON must be an array of strings")
+            raise ConfigurationError(f"{name} JSON must be an array of strings")
         candidates = parsed
     else:
         candidates = raw_value.replace("\r", "\n").replace("\n", ",").split(",")
 
-    names = tuple(name.strip() for name in candidates if name.strip())
+    names = tuple(item.strip() for item in candidates if item.strip())
     if not names:
-        raise ConfigurationError("KAGGLE_TEAMS must contain at least one team name")
+        raise ConfigurationError(f"{name} must contain at least one team name")
 
     normalized: dict[str, str] = {}
-    for name in names:
-        key = normalize_team_name(name)
+    for team_name in names:
+        key = normalize_team_name(team_name)
         if key in normalized:
-            raise ConfigurationError("KAGGLE_TEAMS contains duplicate names after normalization")
-        normalized[key] = name
+            raise ConfigurationError(f"{name} contains duplicate names after normalization")
+        normalized[key] = team_name
     return names
 
 
@@ -253,6 +255,13 @@ class Settings:
         auto_discover_teams = _parse_bool("KAGGLE_AUTO_DISCOVER_TEAMS", default=False)
         raw_teams = os.environ.get("KAGGLE_TEAMS")
         teams = parse_team_names(raw_teams) if raw_teams and raw_teams.strip() else ()
+        # Extra accounts kept apart from KAGGLE_TEAMS, so adding one never means
+        # rewriting the whole secret.
+        raw_extra_teams = os.environ.get("KAGGLE_EXTRA_TEAMS")
+        if raw_extra_teams and raw_extra_teams.strip():
+            teams = merge_team_names(
+                teams, parse_team_names(raw_extra_teams, "KAGGLE_EXTRA_TEAMS")
+            )
         team_aliases = parse_team_aliases(os.environ.get("KAGGLE_TEAM_ALIASES"))
         teams = merge_team_names(
             teams,
